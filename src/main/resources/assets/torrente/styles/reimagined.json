@@ -1,0 +1,19 @@
+{
+  "_comment": "Reimagined style: the vanilla water texture and biome colours stay; reflection, glints, ripples and depth are added on top.",
+  "water_color": "#3360B8",
+  "biome_tint": 1.0,
+  "opacity": 0.55,
+  "absorption": [0.12, 0.06, 0.04],
+  "reflection": 0.6,
+  "specular": 0.8,
+  "wave_normals": 0.35,
+  "texture": 1.0,
+  "refraction": 0.6,
+  "foam": 0.35,
+  "caustics": 0.7,
+  "caustic_scale": 1.0,
+  "caustic_fade": 9,
+  "fog_color": "#1B3F7A",
+  "fog_mix": 0.3,
+  "fog_distance": 1.1
+}

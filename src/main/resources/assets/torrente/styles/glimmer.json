@@ -1,0 +1,19 @@
+{
+  "_comment": "Glimmer style: absorption = Glimmer v1.5.2 WATER_ABSORPTION + WATER_SCATTERING (Copyright (c) 2024 Josh Britain, MIT; see THIRD_PARTY_NOTICES.md). Clear water that loses red first, darker teal depths, stronger ripples.",
+  "water_color": "#0F4A55",
+  "biome_tint": 0.4,
+  "opacity": 0.2,
+  "absorption": [0.301, 0.065, 0.043],
+  "reflection": 1.0,
+  "specular": 1.3,
+  "wave_normals": 1.0,
+  "texture": 0.0,
+  "refraction": 1.0,
+  "foam": 0.3,
+  "caustics": 1.2,
+  "caustic_scale": 0.8,
+  "caustic_fade": 12,
+  "fog_color": "#0B3A40",
+  "fog_mix": 0.8,
+  "fog_distance": 1.1
+}

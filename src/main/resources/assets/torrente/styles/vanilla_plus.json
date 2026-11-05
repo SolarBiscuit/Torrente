@@ -1,0 +1,19 @@
+{
+  "_comment": "Vanilla+ style: vanilla water that gets more opaque with depth, plus clearer underwater fog. No reflection, glints, ripples, refraction, foam or caustics.",
+  "water_color": "#3F76E4",
+  "biome_tint": 1.0,
+  "opacity": 0.6,
+  "absorption": [0.08, 0.05, 0.04],
+  "reflection": 0.0,
+  "specular": 0.0,
+  "wave_normals": 0.0,
+  "texture": 1.0,
+  "refraction": 0.0,
+  "foam": 0.0,
+  "caustics": 0.0,
+  "caustic_scale": 1.0,
+  "caustic_fade": 10,
+  "fog_color": "#3F76E4",
+  "fog_mix": 0.0,
+  "fog_distance": 1.25
+}
