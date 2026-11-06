@@ -38,10 +38,6 @@ minecraft {
     }
 }
 
-sourceSets {
-    stubs
-}
-
 repositories {
     mavenCentral()
 }
@@ -50,10 +46,6 @@ dependencies {
     minecraft "net.minecraftforge:forge:${minecraft_version}-${forge_version}"
     // Separate required jar at runtime (mods.toml dependency); compiled against its dev-named classes.
     compileOnly project(':AtmospheraLib')
-    // Xenon's WorldSlice, for allocation-free neighbour reads in the mesh hook. Compile only; never bundled.
-    // src/stubs holds empty copies of the Fabric API interfaces WorldSlice implements, so javac can resolve it.
-    compileOnly files('../AtmospheraLib/libs/xenon-0.3.31+mc1.20.1.jar')
-    compileOnly sourceSets.stubs.output
 }
 
 tasks.named('processResources', ProcessResources).configure {

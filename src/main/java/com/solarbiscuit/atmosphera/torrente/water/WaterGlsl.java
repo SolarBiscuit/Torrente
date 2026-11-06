@@ -14,11 +14,70 @@ final class WaterGlsl {
     private WaterGlsl() {
     }
 
+    /** Ripple octaves the tables hold (HIGH uses 6). */
+    private static final int RIPPLE_OCTAVES = 8;
+
+    /**
+     * Constant tables of the ripple octaves, the same series 0.1.9 built in its loop (float arithmetic replayed here,
+     * so directions, frequencies and weights are unchanged): direction (sin, cos of the octave's angle), frequency
+     * (x1.18 per octave), weight (x0.8), the summed weight of the first n octaves, and the time rate. The rate was
+     * 2.0 x 1.07^i rad/s; it is now that rounded to whole cycles per hour (n x ATMOS_HOUR_CYCLE), so the hourly wrap
+     * of atmos_Time.y never jumps. TORRENTE_RIP_FINE_TILT bounds the slope octaves 3+ can add (0.536 is the maximum
+     * of exp(sin x - 1) cos x), for the glint gate in torrente_surfaceNormal.
+     */
+    private static String rippleTables() {
+        StringBuilder dir = new StringBuilder();
+        StringBuilder freq = new StringBuilder();
+        StringBuilder weight = new StringBuilder();
+        StringBuilder rate = new StringBuilder();
+        StringBuilder sum = new StringBuilder("0.0");
+        float iter = 0f;
+        float f = 1f;
+        float w = 1f;
+        float tm = 2f;
+        float total = 0f;
+        double fineTilt = 0.0;
+        for (int i = 0; i < RIPPLE_OCTAVES; i++) {
+            String sep = i == 0 ? "" : ", ";
+            dir.append(sep).append("vec2(").append(glsl(Math.sin(iter))).append(", ").append(glsl(Math.cos(iter))).append(')');
+            freq.append(sep).append(glsl(f));
+            weight.append(sep).append(glsl(w));
+            rate.append(sep).append(glsl(Math.rint(tm * 3600.0 / (2.0 * Math.PI))));
+            total += w;
+            sum.append(", ").append(glsl(total));
+            if (i >= 3 && i < 6) {
+                fineTilt += 0.536 * f * w;
+            }
+            w *= 0.8f;
+            f *= 1.18f;
+            tm *= 1.07f;
+            iter += 1232.399963f;
+        }
+        String n = Integer.toString(RIPPLE_OCTAVES);
+        return "const vec2 TORRENTE_RIP_DIR[" + n + "] = vec2[" + n + "](" + dir + ");\n"
+                + "const float TORRENTE_RIP_FREQ[" + n + "] = float[" + n + "](" + freq + ");\n"
+                + "const float TORRENTE_RIP_W[" + n + "] = float[" + n + "](" + weight + ");\n"
+                + "const float TORRENTE_RIP_RATE[" + n + "] = float[" + n + "](" + rate + ");\n"
+                + "const float TORRENTE_RIP_SUM[" + (RIPPLE_OCTAVES + 1) + "] = float[" + (RIPPLE_OCTAVES + 1) + "](" + sum + ");\n"
+                + "const float TORRENTE_RIP_FINE_TILT = " + glsl(fineTilt) + ";\n";
+    }
+
+    private static String glsl(double value) {
+        return String.format(java.util.Locale.ROOT, "%.9g", value);
+    }
+
     /**
      * Swell: three fixed-direction sines (the wind only scales them, so turning wind never spins the pattern).
      * Returns x height, yz slope d/dx, d/dz, in blocks. torrente_Waves.x is 0 while the waves feature is off.
+     * <p>
+     * Every rate on {@code atmos_Time.y} (which wraps at 3600 s) is a whole number of cycles per hour (0.1.10), so
+     * nothing jumps at the wrap: swell 745 / 974 / 1490 (was 1.3 / 1.7 / 2.6 rad/s), foam 974 / 745, ripples from
+     * {@link #rippleTables()}, caustic cells rounded per cell. Speeds changed by under 0.05%.
      */
     private static final String SWELL = """
+            #ifndef ATMOS_HOUR_CYCLE
+            #define ATMOS_HOUR_CYCLE 0.0017453293
+            #endif
             vec3 torrente_swell(vec2 torrenteP) {
                 const vec2 torrenteD1 = vec2(0.8, 0.6);
                 const vec2 torrenteD2 = vec2(-0.36, 0.933);
@@ -26,7 +85,7 @@ final class WaterGlsl {
                 const vec3 torrenteK = vec3(0.55, 0.85, 1.6);
                 const vec3 torrenteA = vec3(0.5, 0.3, 0.2);
                 vec3 torrentePh = vec3(dot(torrenteP, torrenteD1), dot(torrenteP, torrenteD2), dot(torrenteP, torrenteD3))
-                        * torrenteK - atmos_Time.y * vec3(1.3, 1.7, 2.6);
+                        * torrenteK - atmos_Time.y * (vec3(745.0, 974.0, 1490.0) * ATMOS_HOUR_CYCLE);
                 vec3 torrenteC = torrenteA * torrenteK * cos(torrentePh);
                 vec2 torrenteG = torrenteD1 * torrenteC.x + torrenteD2 * torrenteC.y + torrenteD3 * torrenteC.z;
                 return vec3(dot(torrenteA, sin(torrentePh)), torrenteG) * torrente_Waves.x;
@@ -34,32 +93,20 @@ final class WaterGlsl {
             """;
 
     /** Ripples, hash and Voronoi cells (fragment-stage helpers, pure functions of position and time). */
-    private static final String HELPERS = """
+    private static final String HELPERS = rippleTables() + """
             // Ripple slope: octaves of exp(sin) waves with drag, after afl_ext's "very fast procedural ocean" (MIT,
-            // see THIRD_PARTY_NOTICES.md), with the slope summed analytically in one pass.
-            vec2 torrente_ripple(vec2 torrenteP, int torrenteOctaves) {
-                torrenteP *= 1.7;
-                float torrenteIter = 0.0;
-                float torrenteFreq = 1.0;
-                float torrenteTm = 2.0;
-                float torrenteW = 1.0;
-                float torrenteSum = 0.0;
-                vec2 torrenteGrad = vec2(0.0);
-                for (int i = 0; i < 8; i++) {
-                    if (i >= torrenteOctaves) break;
-                    vec2 torrenteD = vec2(sin(torrenteIter), cos(torrenteIter));
-                    float torrenteX = dot(torrenteD, torrenteP) * torrenteFreq + atmos_Time.y * torrenteTm;
-                    float torrenteE = exp(sin(torrenteX) - 1.0);
-                    float torrenteDx = torrenteE * cos(torrenteX);
-                    torrenteGrad += torrenteD * (torrenteDx * torrenteFreq * torrenteW);
-                    torrenteP -= torrenteD * (torrenteDx * torrenteW * 0.2);
-                    torrenteSum += torrenteW;
-                    torrenteW *= 0.8;
-                    torrenteFreq *= 1.18;
-                    torrenteTm *= 1.07;
-                    torrenteIter += 1232.399963;
+            // see THIRD_PARTY_NOTICES.md), with the slope summed analytically. Runs octaves from..to-1 of the same
+            // series, so a caller can run the coarse octaves, look at the result and continue (P carries the drag).
+            void torrente_rippleSteps(inout vec2 torrenteP, inout vec2 torrenteGrad, int torrenteFrom, int torrenteTo) {
+                for (int i = torrenteFrom; i < torrenteTo; i++) {
+                    vec2 torrenteD = TORRENTE_RIP_DIR[i];
+                    float torrenteF = TORRENTE_RIP_FREQ[i];
+                    float torrenteX = dot(torrenteD, torrenteP) * torrenteF
+                            + atmos_Time.y * (TORRENTE_RIP_RATE[i] * ATMOS_HOUR_CYCLE);
+                    float torrenteDx = exp(sin(torrenteX) - 1.0) * cos(torrenteX);
+                    torrenteGrad += torrenteD * (torrenteDx * torrenteF * TORRENTE_RIP_W[i]);
+                    torrenteP -= torrenteD * (torrenteDx * TORRENTE_RIP_W[i] * 0.2);
                 }
-                return torrenteGrad / max(torrenteSum, 1.0) * 0.3;
             }
             vec2 torrente_hash(vec2 torrenteCell) {
                 uvec2 torrenteQ = uvec2(ivec2(torrenteCell)) * uvec2(1597334673u, 3812015801u);
@@ -67,7 +114,8 @@ final class WaterGlsl {
                 return vec2(uvec2(torrenteN, torrenteN * 0x2c1b3c6du) >> 8u) / 16777216.0;
             }
             // Distance to the nearest edge between animated Voronoi cells (0 on an edge).
-            float torrente_cells(vec2 torrenteP, float torrenteT) {
+            // torrenteRate: time scale of the layer (1.4, 1.68); each cell's rate is rounded to whole cycles per hour.
+            float torrente_cells(vec2 torrenteP, float torrenteRate) {
                 vec2 torrenteI = floor(torrenteP);
                 vec2 torrenteF = fract(torrenteP);
                 float torrenteD1 = 8.0;
@@ -76,7 +124,8 @@ final class WaterGlsl {
                     for (int x = -1; x <= 1; x++) {
                         vec2 torrenteG = vec2(x, y);
                         vec2 torrenteH = torrente_hash(torrenteI + torrenteG);
-                        vec2 torrenteO = 0.5 + 0.38 * sin(torrenteT * (0.6 + 0.5 * torrenteH) + 6.2831853 * torrenteH);
+                        vec2 torrenteW = floor(torrenteRate * (0.6 + 0.5 * torrenteH) * 572.957795 + 0.5) * ATMOS_HOUR_CYCLE;
+                        vec2 torrenteO = 0.5 + 0.38 * sin(atmos_Time.y * torrenteW + 6.2831853 * torrenteH);
                         vec2 torrenteR = torrenteG + torrenteO - torrenteF;
                         float torrenteD = dot(torrenteR, torrenteR);
                         if (torrenteD < torrenteD1) {
@@ -101,14 +150,45 @@ final class WaterGlsl {
     private static final String SHADE = """
             // Sun visibility for the glint (Lumis sun shadows on Xenon terrain; stays 1 on LODs and without Lumis).
             float torrente_sunVis = 1.0;
-            // Normal: swell slope plus ripples on top/bottom faces, faded with distance against aliasing.
-            vec3 torrente_surfaceNormal(vec3 torrenteWorld, vec3 torrenteGeo, float torrenteDist, out bool torrenteFlat) {
+            // Normal: swell slope plus ripples on top/bottom faces, faded with distance against aliasing. V: view
+            // direction (eye to fragment). On HIGH, octaves 4-6 only run where they can matter (0.1.10): near the
+            // sun or moon glint, which they break into sparkles, and where they are wider than about two pixels.
+            // Elsewhere they only nudged the Fresnel term. Their weight fades, so no edge shows.
+            vec3 torrente_surfaceNormal(vec3 torrenteWorld, vec3 torrenteGeo, vec3 torrenteV, float torrenteDist,
+                                        out bool torrenteFlat) {
                 vec3 torrenteN = torrenteGeo;
                 torrenteFlat = abs(torrenteGeo.y) > 0.5;
                 if (torrenteFlat) {
                     vec2 torrenteSlope = torrente_swell(torrenteWorld.xz).yz;
-                    torrenteSlope += torrente_ripple(torrenteWorld.xz, int(torrente_Waves.w))
-                            * (torrente_Surface.z * (1.0 + 0.6 * atmos_Time.w) / (1.0 + torrenteDist * 0.03));
+                    float torrenteRip = torrente_Surface.z * (1.0 + 0.6 * atmos_Time.w) / (1.0 + torrenteDist * 0.03);
+                    int torrenteOct = clamp(int(torrente_Waves.w), 0, 8);
+                    int torrenteCoarse = min(torrenteOct, 3);
+                    float torrenteNorm = 0.3 / max(TORRENTE_RIP_SUM[torrenteOct], 1.0) * torrenteRip;
+                    vec2 torrenteP = torrenteWorld.xz * 1.7;
+                    vec2 torrenteG = vec2(0.0);
+                    torrente_rippleSteps(torrenteP, torrenteG, 0, torrenteCoarse);
+                    if (torrenteOct > torrenteCoarse) {
+                        vec2 torrenteS = torrenteSlope + torrenteG * torrenteNorm;
+                        vec3 torrenteNc = normalize(vec3(-torrenteS.x, 1.0, -torrenteS.y)) * sign(torrenteGeo.y);
+                        vec3 torrenteL = atmos_SunDir.y > -0.05 ? atmos_SunDir.xyz : -atmos_SunDir.xyz;
+                        vec3 torrenteH = normalize(torrenteL - torrenteV);
+                        // Glint cone: the lobe (exponent 1200) is invisible beyond about 0.11 rad from H; the fine
+                        // octaves tilt the normal by at most TORRENTE_RIP_FINE_TILT times the ripple scale (slope).
+                        float torrenteCone = 0.11 + TORRENTE_RIP_FINE_TILT * torrenteNorm;
+                        float torrenteAng2 = 2.0 * (1.0 - dot(torrenteNc, torrenteH));
+                        float torrenteFine = 1.0 - smoothstep(torrenteCone * torrenteCone,
+                                1.69 * torrenteCone * torrenteCone, torrenteAng2);
+                        // Pixel footprint (blocks per pixel at about 70 degrees vertical field of view): the same
+                        // function on Xenon and LOD water, so the hand-over stays seamless.
+                        float torrenteBpp = torrenteDist * 1.4 * atmos_Screen.y;
+                        torrenteFine *= 1.0 - smoothstep(0.4, 0.8, torrenteBpp);
+                        if (torrenteFine > 0.0) {
+                            vec2 torrenteGf = vec2(0.0);
+                            torrente_rippleSteps(torrenteP, torrenteGf, torrenteCoarse, torrenteOct);
+                            torrenteG += torrenteGf * torrenteFine;
+                        }
+                    }
+                    torrenteSlope += torrenteG * torrenteNorm;
                     torrenteN = normalize(vec3(-torrenteSlope.x, 1.0, -torrenteSlope.y)) * sign(torrenteGeo.y);
                 }
                 return torrenteN;
@@ -171,8 +251,8 @@ final class WaterGlsl {
                 // Shore foam where the water above the floor is very shallow.
                 if (torrenteMeasured && torrenteFlat && torrente_Waves.y > 0.0) {
                     float torrenteVert = torrenteThick * abs(torrenteV.y);
-                    float torrenteNoise = 0.55 + 0.45 * sin(torrenteWorld.x * 3.1 + torrenteWorld.z * 2.3 + atmos_Time.y * 1.7)
-                            * sin(torrenteWorld.z * 3.7 - torrenteWorld.x * 1.9 - atmos_Time.y * 1.3);
+                    float torrenteNoise = 0.55 + 0.45 * sin(torrenteWorld.x * 3.1 + torrenteWorld.z * 2.3 + atmos_Time.y * (974.0 * ATMOS_HOUR_CYCLE))
+                            * sin(torrenteWorld.z * 3.7 - torrenteWorld.x * 1.9 - atmos_Time.y * (745.0 * ATMOS_HOUR_CYCLE));
                     float torrenteFoam = (1.0 - smoothstep(0.0, 0.5, torrenteVert)) * torrenteNoise * torrente_Waves.y;
                     vec3 torrenteFoamCol = vec3(0.92) * torrenteLight;
                     torrenteRgb = mix(torrenteRgb, torrenteFoamCol, torrenteFoam);
@@ -244,10 +324,9 @@ final class WaterGlsl {
     static String caustics(String submerged) {
         return """
                     if (%s(v_AtmosMaterialBits) != 0u) {
-                        // Face normal towards the eye (derivatives taken here, in control flow that is uniform per
-                        // primitive): light from above, so downward faces get none and walls less.
-                        vec3 torrenteFace = normalize(cross(dFdx(v_AtmosRelPos), dFdy(v_AtmosRelPos)));
-                        if (dot(torrenteFace, v_AtmosRelPos) > 0.0) torrenteFace = -torrenteFace;
+                        // Face normal towards the eye, shared with the other features (the lib computes it once at the
+                        // top of main(), 0.1.10): light from above, so downward faces get none and walls less.
+                        vec3 torrenteFace = atmos_FaceNormal;
                         float torrenteDepth = 15.0 - torrente_vSky * 15.0;
                         float torrenteK = smoothstep(0.4, 1.6, torrenteDepth)
                                 * (1.0 - smoothstep(torrente_Caustics.z * 0.45, torrente_Caustics.z, torrenteDepth))
@@ -265,11 +344,10 @@ final class WaterGlsl {
                         if (torrenteK > 0.003) {
                             vec3 torrenteW = atmos_worldPos(v_AtmosRelPos);
                             vec2 torrenteP = (torrenteW.xz + torrenteW.y * vec2(0.37, 0.61)) * torrente_Caustics.y;
-                            float torrenteT = atmos_Time.y * 1.4;
-                            float torrenteC = 1.0 - smoothstep(0.0, 0.16, torrente_cells(torrenteP, torrenteT));
+                            float torrenteC = 1.0 - smoothstep(0.0, 0.16, torrente_cells(torrenteP, 1.4));
                             if (torrente_Caustics.w > 1.5) {
                                 float torrenteC2 = 1.0 - smoothstep(0.0, 0.2,
-                                        torrente_cells(torrenteP * 1.37 + vec2(3.1, 1.7), torrenteT * 1.2));
+                                        torrente_cells(torrenteP * 1.37 + vec2(3.1, 1.7), 1.68));
                                 torrenteC = 0.65 * torrenteC + 0.35 * torrenteC2;
                             }
                             diffuseColor.rgb *= 1.0 + torrenteC * torrenteC * torrenteK * vec3(1.5, 1.65, 1.7);
@@ -293,7 +371,7 @@ final class WaterGlsl {
                         if (dot(torrenteGeo, torrenteV) > 0.0) torrenteGeo = -torrenteGeo;
                         vec3 torrenteWorld = atmos_worldPos(torrenteRel);
                         bool torrenteFlat;
-                        vec3 torrenteN = torrente_surfaceNormal(torrenteWorld, torrenteGeo, torrenteDist, torrenteFlat);
+                        vec3 torrenteN = torrente_surfaceNormal(torrenteWorld, torrenteGeo, torrenteV, torrenteDist, torrenteFlat);
                         float torrenteCos = clamp(dot(-torrenteV, torrenteN), 0.0, 1.0);
 
                         vec4 torrenteTex = texture(u_BlockTex, v_TexCoord, v_MaterialMipBias);
@@ -389,7 +467,7 @@ final class WaterGlsl {
                         vec3 torrenteGeo = f.geoNormal;
                         vec3 torrenteWorld = atmos_worldPos(torrenteRel);
                         bool torrenteFlat;
-                        vec3 torrenteN = torrente_surfaceNormal(torrenteWorld, torrenteGeo, torrenteDist, torrenteFlat);
+                        vec3 torrenteN = torrente_surfaceNormal(torrenteWorld, torrenteGeo, torrenteV, torrenteDist, torrenteFlat);
                         float torrenteCos = clamp(dot(-torrenteV, torrenteN), 0.0, 1.0);
                         vec3 torrenteScatter = torrente_scatter(f.bathyTint, f.light,
                                 dot(f.albedo.rgb, vec3(0.299, 0.587, 0.114)));

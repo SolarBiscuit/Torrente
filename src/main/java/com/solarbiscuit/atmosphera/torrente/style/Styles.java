@@ -15,7 +15,9 @@ public final class Styles {
 
     private static volatile Map<TorrenteConfig.Style, WaterStyle> presets = new EnumMap<>(TorrenteConfig.Style.class);
     private static WaterStyle custom;
-    private static long customFrame = -1;
+    /** The custom-style option values {@link #custom} was built from (0.1.10: rebuilt only when one changes). */
+    private static double[] customValues;
+    private static com.solarbiscuit.atmosphera.lib.options.AtmosOption<?>[] customOptions;
 
     private Styles() {
     }
@@ -24,17 +26,45 @@ public final class Styles {
         presets = loaded;
     }
 
-    /** The selected style. CUSTOM is rebuilt from the config at most once per {@code frame}. */
+    /**
+     * The selected style. CUSTOM is rebuilt from the config only when one of its option values changed (0.1.10: it
+     * was rebuilt every frame, a record and three arrays each time); the check reads the cached option values and
+     * allocates nothing. {@code frame} is unused since 0.1.10 and kept for callers.
+     */
     public static WaterStyle active(long frame) {
         TorrenteConfig.Style selected = TorrenteConfig.style.get();
         if (selected == TorrenteConfig.Style.CUSTOM) {
-            if (custom == null || frame != customFrame) {
+            if (customChanged() || custom == null) {
                 custom = WaterStyle.fromConfig();
-                customFrame = frame;
             }
             return custom;
         }
         return presets.getOrDefault(selected, WaterStyle.FALLBACK);
+    }
+
+    /** Render thread: compares the custom-style options with the values last used, and remembers the new ones. */
+    private static boolean customChanged() {
+        if (customOptions == null) {
+            customOptions = new com.solarbiscuit.atmosphera.lib.options.AtmosOption<?>[]{
+                    TorrenteConfig.colorR, TorrenteConfig.colorG, TorrenteConfig.colorB, TorrenteConfig.biomeTint,
+                    TorrenteConfig.opacity, TorrenteConfig.absorbR, TorrenteConfig.absorbG, TorrenteConfig.absorbB,
+                    TorrenteConfig.reflection, TorrenteConfig.specular, TorrenteConfig.waveNormals,
+                    TorrenteConfig.texture, TorrenteConfig.refractionStrength, TorrenteConfig.foamStrength,
+                    TorrenteConfig.causticsStyle, TorrenteConfig.causticScale, TorrenteConfig.causticFade,
+                    TorrenteConfig.fogR, TorrenteConfig.fogG, TorrenteConfig.fogB, TorrenteConfig.fogMix,
+                    TorrenteConfig.fogDistance};
+            customValues = new double[customOptions.length];
+            java.util.Arrays.fill(customValues, Double.NaN);
+        }
+        boolean changed = false;
+        for (int i = 0; i < customOptions.length; i++) {
+            double value = ((Number) customOptions[i].get()).doubleValue();
+            if (value != customValues[i]) {
+                customValues[i] = value;
+                changed = true;
+            }
+        }
+        return changed;
     }
 
     public static int depthMode() {

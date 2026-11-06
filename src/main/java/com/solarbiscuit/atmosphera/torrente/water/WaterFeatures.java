@@ -17,7 +17,6 @@ import com.solarbiscuit.atmosphera.torrente.Torrente;
 import com.solarbiscuit.atmosphera.torrente.TorrenteConfig;
 import com.solarbiscuit.atmosphera.torrente.style.Styles;
 import com.solarbiscuit.atmosphera.torrente.style.WaterStyle;
-import me.jellysquid.mods.sodium.client.world.WorldSlice;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
@@ -73,7 +72,7 @@ public final class WaterFeatures {
                 .register();
         AtmosFeature caustics = AtmosFeature.builder(Torrente.MOD_ID, "caustics")
                 .provides(Capability.CAUSTICS)
-                .uses(AtmosFeature.Uses.TERRAIN_SHADER, AtmosFeature.Uses.MESH_BITS)
+                .uses(AtmosFeature.Uses.TERRAIN_SHADER, AtmosFeature.Uses.MESH_BITS, AtmosFeature.Uses.FACE_NORMAL)
                 .switchedBy(TorrenteConfig.caustics)
                 .register();
         UnderwaterFog.feature = AtmosFeature.builder(Torrente.MOD_ID, "underwater_fog")
@@ -128,8 +127,8 @@ public final class WaterFeatures {
     /**
      * Blocks that can show caustics: the block holds water, or water is right above, or a horizontal neighbour is
      * water while the block above is not air (dry shore tops stay out, trench walls are in). At most six slice reads,
-     * through Xenon's int-coordinate {@link WorldSlice#getBlockState(int, int, int)} (no BlockPos, no ThreadLocal:
-     * this runs for every meshed block).
+     * through the lib's {@link MeshHooks#blockAt} (Xenon's int-coordinate WorldSlice read, no BlockPos, no
+     * ThreadLocal: this runs for every meshed block; the fast path moved into the lib in 0.1.10).
      */
     private static BlockMeshHook submergedHook() {
         int bit = submerged.set(0, 1);
@@ -142,24 +141,14 @@ public final class WaterFeatures {
                 int x = pos.getX();
                 int y = pos.getY();
                 int z = pos.getZ();
-                if (level instanceof WorldSlice slice) {
-                    BlockState above = slice.getBlockState(x, y + 1, z);
-                    if (isWater(above.getFluidState())) {
-                        return bit;
-                    }
-                    return !above.isAir() && (isWater(slice.getBlockState(x + 1, y, z).getFluidState())
-                            || isWater(slice.getBlockState(x - 1, y, z).getFluidState())
-                            || isWater(slice.getBlockState(x, y, z + 1).getFluidState())
-                            || isWater(slice.getBlockState(x, y, z - 1).getFluidState())) ? bit : 0;
-                }
-                BlockState above = level.getBlockState(pos.above());
+                BlockState above = MeshHooks.blockAt(level, x, y + 1, z);
                 if (isWater(above.getFluidState())) {
                     return bit;
                 }
-                return !above.isAir() && (isWater(level.getBlockState(pos.east()).getFluidState())
-                        || isWater(level.getBlockState(pos.west()).getFluidState())
-                        || isWater(level.getBlockState(pos.south()).getFluidState())
-                        || isWater(level.getBlockState(pos.north()).getFluidState())) ? bit : 0;
+                return !above.isAir() && (isWater(MeshHooks.blockAt(level, x + 1, y, z).getFluidState())
+                        || isWater(MeshHooks.blockAt(level, x - 1, y, z).getFluidState())
+                        || isWater(MeshHooks.blockAt(level, x, y, z + 1).getFluidState())
+                        || isWater(MeshHooks.blockAt(level, x, y, z - 1).getFluidState())) ? bit : 0;
             }
         };
     }
