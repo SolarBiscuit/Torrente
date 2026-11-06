@@ -75,6 +75,15 @@ public final class WaterFeatures {
                 .uses(AtmosFeature.Uses.TERRAIN_SHADER, AtmosFeature.Uses.MESH_BITS, AtmosFeature.Uses.FACE_NORMAL)
                 .switchedBy(TorrenteConfig.caustics)
                 .register();
+        causticsFeature = caustics;
+        // 0.2.1: exact water depth from the lib's column field (lib 0.5.0); kept running while caustics are active.
+        com.solarbiscuit.atmosphera.lib.world.ColumnFieldShader.requireInTerrain(caustics);
+        net.minecraftforge.common.MinecraftForge.EVENT_BUS.addListener(
+                (net.minecraftforge.event.TickEvent.RenderTickEvent e) -> {
+                    if (e.phase == net.minecraftforge.event.TickEvent.Phase.START) {
+                        keepColumnField();
+                    }
+                });
         UnderwaterFog.feature = AtmosFeature.builder(Torrente.MOD_ID, "underwater_fog")
                 .provides(Capability.UNDERWATER_FOG)
                 .uses(AtmosFeature.Uses.OTHER)
@@ -192,11 +201,77 @@ public final class WaterFeatures {
         });
         FrameUniforms.vec4("torrente_Mode", "x: depth mode (0 off, 1 Torrente, 2 Bathymetry)",
                 out -> out[0] = Styles.depthMode());
+        FrameUniforms.vec4("torrente_Swell", "xyz: amplitude weights of the three swell directions (downwind ones higher, sum of 0.5/0.3/0.2 kept)",
+                WaterFeatures::writeSwell);
+        FrameUniforms.vec4("torrente_Light", "x: crest glow, y: rain ring strength (0 when dry), z: caustic dispersion (HIGH)",
+                WaterFeatures::writeLight);
         FrameUniforms.vec4("torrente_Lod", "x: shade Voxy LOD water (lod_water option), y: debug channel",
                 out -> {
                     out[0] = TorrenteConfig.lodWater.get() ? 1f : 0f;
                     out[1] = TorrenteConfig.debugChannel.get().ordinal();
                 });
+    }
+
+    private static AtmosFeature causticsFeature;
+    private static final Object COLUMN_OWNER = new Object();
+    /** The smallest window (256 blocks): caustics fade out within the vanilla render distance anyway. */
+    private static final int COLUMN_SIZE = 256;
+
+    /** Render tick: keeps the column field (water tops) running while caustics are drawn. */
+    private static void keepColumnField() {
+        ClientLevel level = Minecraft.getInstance().level;
+        if (level != null && causticsFeature != null && causticsFeature.isActive()) {
+            com.solarbiscuit.atmosphera.lib.world.ColumnField.use(COLUMN_OWNER, level, COLUMN_SIZE);
+        }
+    }
+
+    private static final float[][] SWELL_DIRS = {{0.8f, 0.6f}, {-0.36f, 0.933f}, {0.95f, -0.312f}};
+    private static final float[] SWELL_AMP = {0.5f, 0.3f, 0.2f};
+    private static final float[] AXES = new float[4];
+
+    /**
+     * Wind-aligned swell (0.2.0): each fixed direction's share of running downwind, from the lib's axis weights
+     * (FrameUniforms.axisWeights, the same per-frame weights Gale uses), lifts its amplitude and lowers the others.
+     * The weighted sum stays 1, so wind direction only moves height between directions. Phases are untouched.
+     */
+    private static void writeSwell(float[] out) {
+        out[0] = out[1] = out[2] = 1f;
+        ClientLevel level = Minecraft.getInstance().level;
+        if (level == null || !TorrenteConfig.windAligned.get()) {
+            return;
+        }
+        Wind.global(level, Minecraft.getInstance().getFrameTime(), WIND);
+        FrameUniforms.axisWeights(WIND.dirX, WIND.dirZ, AXES);
+        float align = Math.min(1f, WIND.strength * 1.5f);
+        float sum = 0f;
+        for (int i = 0; i < 3; i++) {
+            float dx = SWELL_DIRS[i][0];
+            float dz = SWELL_DIRS[i][1];
+            float px = Math.max(dx, 0f), nx = Math.max(-dx, 0f), pz = Math.max(dz, 0f), nz = Math.max(-dz, 0f);
+            float down = AXES[0] * px * px + AXES[1] * nx * nx + AXES[2] * pz * pz + AXES[3] * nz * nz;
+            out[i] = (1f - align) + align * (0.3f + 2.1f * down);
+            sum += SWELL_AMP[i] * out[i];
+        }
+        float k = 1f / Math.max(sum, 1e-3f);
+        out[0] *= k;
+        out[1] *= k;
+        out[2] *= k;
+    }
+
+    private static void writeLight(float[] out) {
+        out[0] = TorrenteConfig.crestGlow.get().floatValue();
+        ClientLevel level = Minecraft.getInstance().level;
+        if (level != null && TorrenteConfig.rainRipples.get()) {
+            float rain = level.getRainLevel(Minecraft.getInstance().getFrameTime());
+            if (rain > 0.01f) {
+                // Rain, not snow, where the camera is.
+                var pos = Minecraft.getInstance().gameRenderer.getMainCamera().getBlockPosition();
+                if (level.getBiome(pos).value().getPrecipitationAt(pos) == net.minecraft.world.level.biome.Biome.Precipitation.RAIN) {
+                    out[1] = rain;
+                }
+            }
+        }
+        out[2] = TorrenteConfig.causticDispersion.get() && TorrenteConfig.quality.get() == TorrenteConfig.Quality.HIGH ? 1f : 0f;
     }
 
     private static void writeWaves(float[] out) {

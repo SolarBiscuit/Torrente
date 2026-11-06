@@ -67,7 +67,8 @@ final class WaterGlsl {
     }
 
     /**
-     * Swell: three fixed-direction sines (the wind only scales them, so turning wind never spins the pattern).
+     * Swell: three fixed-direction sines. The wind scales them and, since 0.2.0, shifts height towards the directions
+     * that run downwind (torrente_Swell); the directions themselves never turn, so turning wind never spins the pattern.
      * Returns x height, yz slope d/dx, d/dz, in blocks. torrente_Waves.x is 0 while the waves feature is off.
      * <p>
      * Every rate on {@code atmos_Time.y} (which wraps at 3600 s) is a whole number of cycles per hour (0.1.10), so
@@ -83,7 +84,9 @@ final class WaterGlsl {
                 const vec2 torrenteD2 = vec2(-0.36, 0.933);
                 const vec2 torrenteD3 = vec2(0.95, -0.312);
                 const vec3 torrenteK = vec3(0.55, 0.85, 1.6);
-                const vec3 torrenteA = vec3(0.5, 0.3, 0.2);
+                // 0.2.0: amplitudes weighted by how far each direction runs downwind (torrente_Swell, per frame on
+                // the CPU from the lib's wind axes, summing to the same height). Directions and phases never turn.
+                vec3 torrenteA = vec3(0.5, 0.3, 0.2) * torrente_Swell.xyz;
                 vec3 torrentePh = vec3(dot(torrenteP, torrenteD1), dot(torrenteP, torrenteD2), dot(torrenteP, torrenteD3))
                         * torrenteK - atmos_Time.y * (vec3(745.0, 974.0, 1490.0) * ATMOS_HOUR_CYCLE);
                 vec3 torrenteC = torrenteA * torrenteK * cos(torrentePh);
@@ -113,6 +116,28 @@ final class WaterGlsl {
                 uint torrenteN = (torrenteQ.x ^ torrenteQ.y) * 1597334673u;
                 return vec2(uvec2(torrenteN, torrenteN * 0x2c1b3c6du) >> 8u) / 16777216.0;
             }
+            // Rain rings (0.2.0): stateless, one ring per half-block cell in two offset layers. A hash picks each
+            // cell's centre, start and rate (2400-3599 rings per hour, whole cycles, so the hourly wrap never jumps);
+            // the radius grows and the ring fades. Returns the slope (d/dx, d/dz) to add to the surface.
+            vec2 torrente_rainRings(vec2 torrenteXZ) {
+                vec2 torrenteSum = vec2(0.0);
+                for (int torrenteL = 0; torrenteL < 2; torrenteL++) {
+                    vec2 torrenteQ = torrenteXZ * 2.0 + vec2(0.5 * float(torrenteL));
+                    vec2 torrenteCell = floor(torrenteQ);
+                    vec2 torrenteF = fract(torrenteQ);
+                    vec2 torrenteH = torrente_hash(torrenteCell + vec2(float(torrenteL) * 71.0, 0.0));
+                    vec2 torrenteCtr = 0.3 + 0.4 * torrente_hash(torrenteCell + vec2(13.0, 29.0 + float(torrenteL)));
+                    float torrenteN = 2400.0 + floor(torrenteH.x * 1200.0);
+                    float torrentePh = fract(atmos_Time.y * (torrenteN * (1.0 / 3600.0)) + torrenteH.y);
+                    vec2 torrenteR = torrenteF - torrenteCtr;
+                    float torrenteD = length(torrenteR);
+                    float torrenteX = (torrenteD - torrentePh * 0.3) * 14.0;
+                    float torrenteBump = -2.0 * torrenteX * exp(-torrenteX * torrenteX);
+                    float torrenteFade = (1.0 - torrentePh) * (1.0 - torrentePh);
+                    torrenteSum += torrenteR / max(torrenteD, 1e-3) * (torrenteBump * torrenteFade * 0.35);
+                }
+                return torrenteSum;
+            }
             // Distance to the nearest edge between animated Voronoi cells (0 on an edge).
             // torrenteRate: time scale of the layer (1.4, 1.68); each cell's rate is rounded to whole cycles per hour.
             float torrente_cells(vec2 torrenteP, float torrenteRate) {
@@ -138,6 +163,15 @@ final class WaterGlsl {
                 }
                 return sqrt(torrenteD2) - sqrt(torrenteD1);
             }
+            // Caustic brightness at a surface point (one layer on LOW, two on HIGH).
+            float torrente_causticAt(vec2 torrenteP) {
+                float torrenteC = 1.0 - smoothstep(0.0, 0.16, torrente_cells(torrenteP, 1.4));
+                if (torrente_Caustics.w > 1.5) {
+                    float torrenteC2 = 1.0 - smoothstep(0.0, 0.2, torrente_cells(torrenteP * 1.37 + vec2(3.1, 1.7), 1.68));
+                    torrenteC = 0.65 * torrenteC + 0.35 * torrenteC2;
+                }
+                return torrenteC;
+            }
             """;
 
     /**
@@ -155,7 +189,7 @@ final class WaterGlsl {
             // sun or moon glint, which they break into sparkles, and where they are wider than about two pixels.
             // Elsewhere they only nudged the Fresnel term. Their weight fades, so no edge shows.
             vec3 torrente_surfaceNormal(vec3 torrenteWorld, vec3 torrenteGeo, vec3 torrenteV, float torrenteDist,
-                                        out bool torrenteFlat) {
+                                        float torrenteSky, out bool torrenteFlat) {
                 vec3 torrenteN = torrenteGeo;
                 torrenteFlat = abs(torrenteGeo.y) > 0.5;
                 if (torrenteFlat) {
@@ -189,6 +223,16 @@ final class WaterGlsl {
                         }
                     }
                     torrenteSlope += torrenteG * torrenteNorm;
+                    // Rain rings near the camera on water open to the sky (skylight as the exposure test until the
+                    // lib's ColumnField gives the rain top), faded by distance and pixel footprint.
+                    if (torrente_Light.y > 0.0 && torrenteDist < 40.0 && torrenteGeo.y > 0.5) {
+                        float torrenteRf = torrente_Light.y * smoothstep(0.9, 1.0, torrenteSky)
+                                * (1.0 - smoothstep(24.0, 40.0, torrenteDist))
+                                * (1.0 - smoothstep(0.25, 0.5, torrenteDist * 1.4 * atmos_Screen.y * 14.0));
+                        if (torrenteRf > 0.0) {
+                            torrenteSlope += torrente_rainRings(torrenteWorld.xz) * torrenteRf;
+                        }
+                    }
                     torrenteN = normalize(vec3(-torrenteSlope.x, 1.0, -torrenteSlope.y)) * sign(torrenteGeo.y);
                 }
                 return torrenteN;
@@ -247,6 +291,19 @@ final class WaterGlsl {
                 torrenteRgb += torrenteSpec * torrenteSunCol;
                 torrenteAlpha = max(torrenteAlpha, clamp(torrenteSpec, 0.0, 1.0));
                 torrentePremul += torrenteSpec * torrenteSunCol;
+
+                // Crest glow (0.2.0): looking towards a low sun, light shines through the thin tops of the swell.
+                // Forward lobe pow(V.L, 4) x crest height x grazing view, in the water colour.
+                float torrenteToSun = max(dot(torrenteV, torrenteL), 0.0);
+                if (torrente_Light.x > 0.0 && torrenteSunUp > -0.05 && torrenteToSun > 0.3 && torrenteFlat) {
+                    float torrenteHn = torrente_swell(torrenteWorld.xz).x / max(torrente_Waves.x, 1e-4);
+                    float torrenteGlow = pow(torrenteToSun, 4.0) * smoothstep(0.15, 0.85, torrenteHn) * (1.0 - torrenteCos)
+                            * torrenteLi * torrente_sunVis * torrente_Light.x * smoothstep(0.85, 1.0, torrenteSky)
+                            * (1.0 - 0.85 * torrenteRain);
+                    vec3 torrenteGlowCol = torrente_Color.rgb * torrenteSunCol * (1.6 * torrenteGlow);
+                    torrenteRgb += torrenteGlowCol;
+                    torrentePremul += torrenteGlowCol;
+                }
 
                 // Shore foam where the water above the floor is very shallow.
                 if (torrenteMeasured && torrenteFlat && torrente_Waves.y > 0.0) {
@@ -327,11 +384,30 @@ final class WaterGlsl {
                         // Face normal towards the eye, shared with the other features (the lib computes it once at the
                         // top of main(), 0.1.10): light from above, so downward faces get none and walls less.
                         vec3 torrenteFace = atmos_FaceNormal;
+                        // Depth below the water surface: skylight proxy (15 - skylight), or since 0.2.1 the exact
+                        // depth from the lib's column field where the column is known. Sampled half a block out
+                        // along the face, so a wall reads the water column it faces. No water above the point, or
+                        // rock between it and the surface (lit caves, overhangs, dry shore): no caustics.
                         float torrenteDepth = 15.0 - torrente_vSky * 15.0;
+                #ifdef ATMOS_COLUMN_FIELD
+                        vec3 torrenteProbe = v_AtmosRelPos + torrenteFace * 0.5;
+                        vec4 torrenteColumn = atmos_columnRaw(torrenteProbe);
+                        if (atmos_columnKnown(torrenteColumn)) {
+                            float torrenteY = atmos_worldPos(v_AtmosRelPos).y;
+                            bool torrenteCovered = torrenteY + 0.1 < atmos_columnY(torrenteColumn.r);
+                            torrenteDepth = torrenteColumn.g > 0.5 && !torrenteCovered
+                                    ? atmos_columnY(torrenteColumn.g) - torrenteY : -1.0;
+                        }
+                #endif
+                        // 0.2.0: the sun (moon at night) refracted into the water (n = 1.33): the light that makes the
+                        // pattern. Faces are lit by their angle to it, so walls facing away and undersides get none.
+                        vec3 torrenteLs = atmos_SunDir.y > -0.05 ? atmos_SunDir.xyz : -atmos_SunDir.xyz;
+                        vec2 torrenteLh = torrenteLs.xz * (1.0 / 1.33);
+                        vec3 torrenteLw = vec3(torrenteLh.x, sqrt(max(1.0 - dot(torrenteLh, torrenteLh), 0.0)), torrenteLh.y);
                         float torrenteK = smoothstep(0.4, 1.6, torrenteDepth)
                                 * (1.0 - smoothstep(torrente_Caustics.z * 0.45, torrente_Caustics.z, torrenteDepth))
                                 * atmos_SunDir.w * (1.0 - 0.7 * atmos_Time.w) * torrente_Caustics.x
-                                * clamp(0.6 + 0.4 * torrenteFace.y, 0.0, 1.0) * step(-0.5, torrenteFace.y);
+                                * clamp(dot(torrenteFace, torrenteLw) * 1.25, 0.0, 1.0);
                         // Voxy LOD seabeds have no caustics: fade them out before the LOD transition starts
                         if (atmos_Lod.w > 0.5) {
                             torrenteK *= 1.0 - smoothstep(atmos_Lod.x - 24.0, atmos_Lod.x, length(v_AtmosRelPos));
@@ -342,15 +418,21 @@ final class WaterGlsl {
                         }
                 #endif
                         if (torrenteK > 0.003) {
+                            // The pattern lives on the surface: follow the refracted sun ray up to it (depth from the
+                            // skylight proxy), P_s = P + L (depth / L.y). It moves with the sun and lines up with the
+                            // shadows; walls get a proper slice of it.
                             vec3 torrenteW = atmos_worldPos(v_AtmosRelPos);
-                            vec2 torrenteP = (torrenteW.xz + torrenteW.y * vec2(0.37, 0.61)) * torrente_Caustics.y;
-                            float torrenteC = 1.0 - smoothstep(0.0, 0.16, torrente_cells(torrenteP, 1.4));
-                            if (torrente_Caustics.w > 1.5) {
-                                float torrenteC2 = 1.0 - smoothstep(0.0, 0.2,
-                                        torrente_cells(torrenteP * 1.37 + vec2(3.1, 1.7), 1.68));
-                                torrenteC = 0.65 * torrenteC + 0.35 * torrenteC2;
+                            vec2 torrenteSurf = torrenteW.xz + torrenteLw.xz * (torrenteDepth / max(torrenteLw.y, 0.5));
+                            vec2 torrenteP = torrenteSurf * torrente_Caustics.y;
+                            vec3 torrenteC3 = vec3(torrente_causticAt(torrenteP));
+                            if (torrente_Light.z > 0.5) {
+                                // Dispersion (HIGH, optional): red and blue focus a little apart, more with depth.
+                                vec2 torrenteSpread = torrenteLw.xz * (0.012 * torrenteDepth) * torrente_Caustics.y
+                                        + vec2(0.004 * torrenteDepth);
+                                torrenteC3.r = torrente_causticAt(torrenteP + torrenteSpread);
+                                torrenteC3.b = torrente_causticAt(torrenteP - torrenteSpread);
                             }
-                            diffuseColor.rgb *= 1.0 + torrenteC * torrenteC * torrenteK * vec3(1.5, 1.65, 1.7);
+                            diffuseColor.rgb *= 1.0 + torrenteC3 * torrenteC3 * torrenteK * vec3(1.5, 1.65, 1.7);
                         }
                     }
                 """.formatted(submerged);
@@ -371,7 +453,8 @@ final class WaterGlsl {
                         if (dot(torrenteGeo, torrenteV) > 0.0) torrenteGeo = -torrenteGeo;
                         vec3 torrenteWorld = atmos_worldPos(torrenteRel);
                         bool torrenteFlat;
-                        vec3 torrenteN = torrente_surfaceNormal(torrenteWorld, torrenteGeo, torrenteV, torrenteDist, torrenteFlat);
+                        vec3 torrenteN = torrente_surfaceNormal(torrenteWorld, torrenteGeo, torrenteV, torrenteDist,
+                                torrente_vSky, torrenteFlat);
                         float torrenteCos = clamp(dot(-torrenteV, torrenteN), 0.0, 1.0);
 
                         vec4 torrenteTex = texture(u_BlockTex, v_TexCoord, v_MaterialMipBias);
@@ -467,7 +550,8 @@ final class WaterGlsl {
                         vec3 torrenteGeo = f.geoNormal;
                         vec3 torrenteWorld = atmos_worldPos(torrenteRel);
                         bool torrenteFlat;
-                        vec3 torrenteN = torrente_surfaceNormal(torrenteWorld, torrenteGeo, torrenteV, torrenteDist, torrenteFlat);
+                        vec3 torrenteN = torrente_surfaceNormal(torrenteWorld, torrenteGeo, torrenteV, torrenteDist,
+                                f.sky, torrenteFlat);
                         float torrenteCos = clamp(dot(-torrenteV, torrenteN), 0.0, 1.0);
                         vec3 torrenteScatter = torrente_scatter(f.bathyTint, f.light,
                                 dot(f.albedo.rgb, vec3(0.299, 0.587, 0.114)));

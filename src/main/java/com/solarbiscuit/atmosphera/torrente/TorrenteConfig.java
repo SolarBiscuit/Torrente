@@ -25,6 +25,10 @@ public final class TorrenteConfig {
     public static AtmosOption<DebugChannel> debugChannel;
     public static AtmosConfig.FeatureSwitch waves;
     public static AtmosOption<Double> waveHeight;
+    public static AtmosOption<Boolean> windAligned;
+    public static AtmosOption<Double> crestGlow;
+    public static AtmosOption<Boolean> rainRipples;
+    public static AtmosOption<Boolean> causticDispersion;
     public static AtmosConfig.FeatureSwitch caustics;
     public static AtmosOption<Double> causticStrength;
     /** causticStrength slider value to shader strength: 50% on the slider = 0.2, the old 20%. */
@@ -80,6 +84,10 @@ public final class TorrenteConfig {
                 "Distant Voxy/NeoVoxy LOD water gets the same shading as the water nearby (colour, depth, reflection, "
                         + "glints, waves), so there is no visible ring where the vanilla render distance ends. "
                         + "Needs AtmospheraLib's Voxy LOD shading; no shader pack.");
+        crestGlow = config.percent("crest_glow", 0.5, 0.0, 1.0, ChangeTier.LIVE, "Crest glow",
+                "Looking towards a low sun, light shines through the tops of the waves in the water's colour (0% = off).");
+        rainRipples = config.toggle("rain_ripples", true, ChangeTier.LIVE, "Rain ripples",
+                "Rings spread on water open to the sky while it rains.");
         debugChannel = config.choice("debug_channel", DebugChannel.OFF, ChangeTier.LIVE, "Debug: show input",
                 "Diagnostics: paints one input of the water shading instead of the water, on near and Voxy LOD water "
                         + "alike, so the two can be compared at the LOD transition (NeoVoxy /voxy debug handoff compare). "
@@ -91,6 +99,8 @@ public final class TorrenteConfig {
                 "Water surfaces move up and down, more in wind and rain.");
         waveHeight = config.percent("height", 1.0, 0.0, 2.0, ChangeTier.LIVE, "Wave height",
                 "How high the waves are. Always capped at 0.1 blocks.");
+        windAligned = config.toggle("wind_aligned", true, ChangeTier.LIVE, "Waves follow the wind",
+                "The swell running downwind grows and the others calm down, so the main waves line up with the wind.");
 
         config.section("caustics", "Caustics: moving light patterns on blocks under water.");
         caustics = config.featureSwitch("enabled", true, "Caustics",
@@ -98,6 +108,9 @@ public final class TorrenteConfig {
         // New key (was strength, 0-200%): 50% here is the old 20%, the look players settled on (2026-11-02).
         causticStrength = config.percent("intensity", 0.5, 0.0, 1.0, ChangeTier.LIVE, "Caustic strength",
                 "How bright the caustic pattern is. 50% is the default; 100% is twice as bright.");
+        causticDispersion = config.toggle("dispersion", false, ChangeTier.LIVE, "Caustic dispersion",
+                "HIGH quality only: rainbow edges on caustics, stronger in deeper water. Costs about 2-3 times the "
+                        + "caustic work on lit floors.");
 
         config.section("underwater", "Underwater view.");
         underwaterFog = config.featureSwitch("fog", true, "Underwater fog",
