@@ -1,7 +1,8 @@
 # Third-party notices
 
-Torrente is MIT licensed (see `LICENSE`). Parts of its GLSL are adapted from the MIT-licensed work below; the
-notices are kept as the MIT license requires. No Complementary Shaders code is used: the "Unbound" style is a
+Torrente is licensed under the GNU General Public License v3.0 only (see `LICENSE` and `NOTICE`). Parts of its GLSL
+and styles are adapted from the MIT-licensed work below; the notices are kept as the MIT license requires. MIT is
+compatible with GPL-3.0, and the MIT terms continue to apply to that material. No Complementary Shaders code is used: the "Unbound" style is a
 look-alike built from standard techniques (Fresnel-Schlick, Beer-Lambert, sums of sines).
 
 ## Glimmer Shaders v1.5.2 (water absorption and scattering coefficients)
