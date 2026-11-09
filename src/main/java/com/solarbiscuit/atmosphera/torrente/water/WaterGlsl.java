@@ -184,6 +184,9 @@ final class WaterGlsl {
     private static final String SHADE = """
             // Sun visibility for the glint (Lumis sun shadows on Xenon terrain; stays 1 on LODs and without Lumis).
             float torrente_sunVis = 1.0;
+            // Rain exposure for the rings (0.2.2): set from the column field rain top on Xenon water; -1 = use the
+            // skylight test (LODs, or no field data).
+            float torrente_rainSky = -1.0;
             // Normal: swell slope plus ripples on top/bottom faces, faded with distance against aliasing. V: view
             // direction (eye to fragment). On HIGH, octaves 4-6 only run where they can matter (0.1.10): near the
             // sun or moon glint, which they break into sparkles, and where they are wider than about two pixels.
@@ -226,7 +229,8 @@ final class WaterGlsl {
                     // Rain rings near the camera on water open to the sky (skylight as the exposure test until the
                     // lib's ColumnField gives the rain top), faded by distance and pixel footprint.
                     if (torrente_Light.y > 0.0 && torrenteDist < 40.0 && torrenteGeo.y > 0.5) {
-                        float torrenteRf = torrente_Light.y * smoothstep(0.9, 1.0, torrenteSky)
+                        float torrenteRf = torrente_Light.y
+                                * (torrente_rainSky >= 0.0 ? torrente_rainSky : smoothstep(0.9, 1.0, torrenteSky))
                                 * (1.0 - smoothstep(24.0, 40.0, torrenteDist))
                                 * (1.0 - smoothstep(0.25, 0.5, torrenteDist * 1.4 * atmos_Screen.y * 14.0));
                         if (torrenteRf > 0.0) {
@@ -452,6 +456,14 @@ final class WaterGlsl {
                         vec3 torrenteGeo = normalize(cross(dFdx(torrenteRel), dFdy(torrenteRel)));
                         if (dot(torrenteGeo, torrenteV) > 0.0) torrenteGeo = -torrenteGeo;
                         vec3 torrenteWorld = atmos_worldPos(torrenteRel);
+                    #ifdef ATMOS_COLUMN_FIELD
+                        // 0.2.2: rain reaches the surface when nothing stands above it (the rain top of a water
+                        // column is its surface; under a roof or a tree it is higher).
+                        float torrenteRainTop = atmos_rainTop(torrenteRel);
+                        torrente_rainSky = torrenteRainTop > -1e8
+                                ? smoothstep(torrenteRainTop - 0.6, torrenteRainTop - 0.2, torrenteRel.y + atmos_CameraPos.y)
+                                : -1.0;
+                    #endif
                         bool torrenteFlat;
                         vec3 torrenteN = torrente_surfaceNormal(torrenteWorld, torrenteGeo, torrenteV, torrenteDist,
                                 torrente_vSky, torrenteFlat);

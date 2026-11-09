@@ -1,0 +1,19 @@
+{
+  "_comment": "Aurora style, after Aurora Fantasy 5.6 by in2bubble (based on MakeUp Ultra Fast by KDXavier; LGPL-3.0-or-later, see THIRD_PARTY_NOTICES.md). Values taken from its water (lib/water_aurora.glsl, lib/water_waves.glsl, lib/color_utils.glsl, lib/config.glsl): per-block extinction (0.19, 0.12, 0.065), an 18% body-colour floor (transmittance x 0.82), reflection 0.7 (REFLEX_INDEX with SSR), 'natural' waves, the overworld underwater fog colour (0.04, 0.12, 0.22). Water colour: its mid-depth blue-violet body with the daytime tint (0.082, 0.145, 0.335). Turquoise shallows come from the absorption over the bed. No biome tint: Aurora's palette is fixed. No code or textures copied.",
+  "water_color": "#152555",
+  "biome_tint": 0.15,
+  "opacity": 0.18,
+  "absorption": [0.19, 0.12, 0.065],
+  "reflection": 0.7,
+  "specular": 1.2,
+  "wave_normals": 0.9,
+  "texture": 0.0,
+  "refraction": 1.0,
+  "foam": 0.6,
+  "caustics": 1.0,
+  "caustic_scale": 1.0,
+  "caustic_fade": 10,
+  "fog_color": "#0A1F38",
+  "fog_mix": 0.9,
+  "fog_distance": 1.3
+}

@@ -6,7 +6,7 @@ import com.solarbiscuit.atmosphera.lib.options.ChangeTier;
 
 /** {@code config/SolConfig/atmosphera/torrente-client.toml} and the Torrente group in Video Settings > Atmosphera. */
 public final class TorrenteConfig {
-    public enum Style { UNBOUND, GLIMMER, REIMAGINED, VANILLA_PLUS, CUSTOM }
+    public enum Style { UNBOUND, GLIMMER, REIMAGINED, VANILLA_PLUS, AURORA, CUSTOM }
 
     public enum Quality { LOW, HIGH }
 
@@ -70,7 +70,8 @@ public final class TorrenteConfig {
                 "Styled water colour that deepens with depth, sky reflection, sun glints, ripples and shore foam.");
         style = config.choice("style", Style.UNBOUND, ChangeTier.LIVE, "Water style",
                 "UNBOUND: clear blue (RatPack). GLIMMER: physically based absorption. REIMAGINED: vanilla texture "
-                        + "with light effects. VANILLA_PLUS: depth opacity and fog only. CUSTOM: the [custom] values.");
+                        + "with light effects. VANILLA_PLUS: depth opacity and fog only. AURORA: turquoise shallows, blue-violet "
+                        + "depths (after Aurora Fantasy). CUSTOM: the [custom] values.");
         quality = config.choice("quality", Quality.HIGH, ChangeTier.LIVE, "Water quality",
                 "LOW: fewer ripple octaves and one caustic layer. HIGH: full detail.");
         depthMode = config.choice("depth_mode", DepthMode.AUTO, ChangeTier.LIVE, "Depth colour",
