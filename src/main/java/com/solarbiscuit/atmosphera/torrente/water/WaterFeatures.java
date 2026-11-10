@@ -30,7 +30,8 @@ import net.minecraft.world.level.material.FluidState;
  * <ul>
  *   <li>material bit {@code torrente:surface} on every water fluid quad (water shading, waves);</li>
  *   <li>material bit {@code torrente:submerged} on blocks under or beside water (caustics);</li>
- *   <li>six AtmosFrame slots with the active style, written once per frame on the render thread.</li>
+ *   <li>nine AtmosFrame slots ({@link FrameUniforms}) with the active style, wind and weather, written once per
+ *   frame on the render thread.</li>
  * </ul>
  * The underwater fog feature has no terrain part; see {@link UnderwaterFog}.
  */
@@ -263,15 +264,57 @@ public final class WaterFeatures {
         ClientLevel level = Minecraft.getInstance().level;
         if (level != null && TorrenteConfig.rainRipples.get()) {
             float rain = level.getRainLevel(Minecraft.getInstance().getFrameTime());
-            if (rain > 0.01f) {
-                // Rain, not snow, where the camera is.
-                var pos = Minecraft.getInstance().gameRenderer.getMainCamera().getBlockPosition();
-                if (level.getBiome(pos).value().getPrecipitationAt(pos) == net.minecraft.world.level.biome.Biome.Precipitation.RAIN) {
-                    out[1] = rain;
-                }
+            if (rain > 0.01f && rainsOnNearbyWater(level,
+                    Minecraft.getInstance().gameRenderer.getMainCamera().getBlockPosition())) {
+                out[1] = rain;
             }
         }
         out[2] = TorrenteConfig.causticDispersion.get() && TorrenteConfig.quality.get() == TorrenteConfig.Quality.HIGH ? 1f : 0f;
+    }
+
+    /** Columns tested for rain: the camera's and four 16 blocks away (rings are drawn within 40 blocks). */
+    private static final int[] RAIN_PROBES = {0, 0, 16, 0, -16, 0, 0, 16, 0, -16};
+    private static final BlockPos.MutableBlockPos RAIN_POS = new BlockPos.MutableBlockPos();
+
+    /**
+     * Rain, not snow, on the water near the camera (0.2.4; it was tested at the camera itself, so a camera on a snowy
+     * peak or in a snowy biome beside a rainy one turned the rings off everywhere). The column field gives each probe's
+     * water surface: rain at any of them turns the rings on, snow at all of them keeps them off. Without field data
+     * (field off, or no water under the probes) each probe is tested at the camera's height, or sea level if lower.
+     * Render thread, no allocation.
+     */
+    private static boolean rainsOnNearbyWater(ClientLevel level, BlockPos camera) {
+        boolean water = false;
+        if (com.solarbiscuit.atmosphera.lib.world.ColumnField.ready()) {
+            for (int i = 0; i < RAIN_PROBES.length; i += 2) {
+                int x = camera.getX() + RAIN_PROBES[i];
+                int z = camera.getZ() + RAIN_PROBES[i + 1];
+                int raw = com.solarbiscuit.atmosphera.lib.world.ColumnField.waterRaw(x, z);
+                if (raw != 0) {
+                    water = true;
+                    int y = (int) Math.floor(com.solarbiscuit.atmosphera.lib.world.ColumnField.top(raw) - 0.05f);
+                    if (rainsAt(level, x, y, z)) {
+                        return true;
+                    }
+                }
+            }
+        }
+        if (water) {
+            return false;
+        }
+        int y = Math.min(camera.getY(), level.getSeaLevel() - 1);
+        for (int i = 0; i < RAIN_PROBES.length; i += 2) {
+            if (rainsAt(level, camera.getX() + RAIN_PROBES[i], y, camera.getZ() + RAIN_PROBES[i + 1])) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean rainsAt(ClientLevel level, int x, int y, int z) {
+        RAIN_POS.set(x, y, z);
+        return level.getBiome(RAIN_POS).value().getPrecipitationAt(RAIN_POS)
+                == net.minecraft.world.level.biome.Biome.Precipitation.RAIN;
     }
 
     private static void writeWaves(float[] out) {

@@ -8,7 +8,9 @@ package com.solarbiscuit.atmosphera.torrente.water;
  * Frame slots (see {@link WaterFeatures}): {@code torrente_Color} (rgb water colour, a shallow opacity),
  * {@code torrente_Absorb} (rgb absorption per block, a biome tint), {@code torrente_Surface} (reflection, specular,
  * ripples, texture), {@code torrente_Waves} (swell height, foam, refraction, ripple octaves),
- * {@code torrente_Caustics} (strength, cells per block, fade depth, layers), {@code torrente_Mode} (x depth mode).
+ * {@code torrente_Caustics} (strength, cells per block, fade depth, layers), {@code torrente_Mode} (x depth mode),
+ * {@code torrente_Swell} (amplitude weights of the three swell directions), {@code torrente_Light} (crest glow, rain
+ * ring strength, caustic dispersion), {@code torrente_Lod} (Voxy LOD water, debug channel).
  */
 final class WaterGlsl {
     private WaterGlsl() {
@@ -291,7 +293,12 @@ final class WaterGlsl {
                 vec3 torrenteH = normalize(torrenteL - torrenteV);
                 float torrenteSpec = pow(max(dot(torrenteN, torrenteH), 0.0), 1200.0) * 3.0 * torrenteLi * torrente_sunVis
                         * torrente_Surface.y * smoothstep(0.85, 1.0, torrenteSky) * (1.0 - 0.85 * torrenteRain);
-                vec3 torrenteSunCol = mix(vec3(1.0, 0.62, 0.35), vec3(1.0, 0.97, 0.9), smoothstep(0.0, 0.3, torrenteSunUp));
+                // Sunset orange to white for the sun; a cool tint for the moon (the hue of Lumis's night sun colour,
+                // SunModel 0.80/0.88/1.10 scaled to 1). 0.2.4: the moon glint was sunset orange. Both glints are 0
+                // at the switch (sunUp = -0.05), so it never pops.
+                vec3 torrenteSunCol = torrenteSunUp > -0.05
+                        ? mix(vec3(1.0, 0.62, 0.35), vec3(1.0, 0.97, 0.9), smoothstep(0.0, 0.3, torrenteSunUp))
+                        : vec3(0.73, 0.80, 1.0);
                 torrenteRgb += torrenteSpec * torrenteSunCol;
                 torrenteAlpha = max(torrenteAlpha, clamp(torrenteSpec, 0.0, 1.0));
                 torrentePremul += torrenteSpec * torrenteSunCol;

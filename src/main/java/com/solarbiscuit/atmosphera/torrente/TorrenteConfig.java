@@ -86,7 +86,8 @@ public final class TorrenteConfig {
                         + "glints, waves), so there is no visible ring where the vanilla render distance ends. "
                         + "Needs AtmospheraLib's Voxy LOD shading; no shader pack.");
         crestGlow = config.percent("crest_glow", 0.5, 0.0, 1.0, ChangeTier.LIVE, "Crest glow",
-                "Looking towards a low sun, light shines through the tops of the waves in the water's colour (0% = off).");
+                "Looking towards a low sun, light shines through the tops of the waves in the water's colour (0% = off). "
+                        + "Needs water waves on.");
         rainRipples = config.toggle("rain_ripples", true, ChangeTier.LIVE, "Rain ripples",
                 "Rings spread on water open to the sky while it rains.");
         debugChannel = config.choice("debug_channel", DebugChannel.OFF, ChangeTier.LIVE, "Debug: show input",
