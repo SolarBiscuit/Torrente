@@ -73,7 +73,7 @@ The figures below are the project's own measurements, taken with the in-repo sce
 | Release | Theme | Content |
 |---|---|---|
 | 0.1.x | Foundation | Styles, absorption, Fresnel and glints, refraction, foam, swell and ripples, caustics, underwater fog; whole-cycle animation and cheaper ripples |
-| 0.2.x | Light (**current: 0.2.1**) | Wind-aligned waves, sun-projected caustics, crest glow, rain rings, caustic dispersion, exact caustic depth from the column field |
+| 0.2.x | Light (**current: 0.2.5**) | Wind-aligned waves, sun-projected caustics, crest glow, rain rings, caustic dispersion, exact caustic depth from the column field; 0.2.5: the water reflects Stratos's sky and clouds |
 | 0.3.0 | Mirror | Planar reflections (compute, one plane, sky fallback) |
 | 0.4.0 | Contact | Interactive ripples, underwater shafts with Lumis, entities under water, waterline; research: glass behind water, turbid refraction |
 
@@ -83,7 +83,7 @@ Dates are not promised. Each feature release is a minor version (0.X.0). Version
 
 - Minecraft **1.20.1** with Forge **47.x**
 - Java **17** or newer
-- [AtmospheraLib](https://github.com/SolarBiscuit/AtmospheraLib) **0.5.0** or newer
+- [AtmospheraLib](https://github.com/SolarBiscuit/AtmospheraLib) **0.8.0** or newer
 - An Embeddium-based terrain renderer (developed and tested with Xenon 0.3.31)
 - Optional: Gale for wind-aligned waves, Lumis for underwater shafts, NeoVoxy for LOD water
 
@@ -91,7 +91,7 @@ Dates are not promised. Each feature release is a minor version (0.X.0). Version
 
 1. Install AtmospheraLib and an Embeddium-based terrain renderer.
 2. Place `torrente-<version>-mc1.20.1-forge.jar` in `mods`.
-3. Options are in the Atmosphera tab of Video Settings, and in `config/SolConfig/atmosphera/`.
+3. Options are in the Atmosphera tab of Video Settings, and in `config/Atmosphera/` (before AtmospheraLib 0.6.7: `config/SolConfig/atmosphera/`, moved across automatically).
 
 ## Building
 

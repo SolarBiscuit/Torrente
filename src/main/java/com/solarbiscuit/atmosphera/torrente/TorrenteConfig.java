@@ -4,7 +4,7 @@ import com.solarbiscuit.atmosphera.lib.options.AtmosConfig;
 import com.solarbiscuit.atmosphera.lib.options.AtmosOption;
 import com.solarbiscuit.atmosphera.lib.options.ChangeTier;
 
-/** {@code config/SolConfig/atmosphera/torrente-client.toml} and the Torrente group in Video Settings > Atmosphera. */
+/** {@code config/Atmosphera/torrente-client.toml} and the Torrente group in Video Settings > Atmosphera. */
 public final class TorrenteConfig {
     public enum Style { UNBOUND, GLIMMER, REIMAGINED, VANILLA_PLUS, AURORA, CUSTOM }
 

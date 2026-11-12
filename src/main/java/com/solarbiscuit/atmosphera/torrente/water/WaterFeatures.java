@@ -79,6 +79,8 @@ public final class WaterFeatures {
         causticsFeature = caustics;
         // 0.2.1: exact water depth from the lib's column field (lib 0.5.0); kept running while caustics are active.
         com.solarbiscuit.atmosphera.lib.world.ColumnFieldShader.requireInTerrain(caustics);
+        // 0.2.5: the drawn sky and clouds in the reflection (lib 0.8.0 SkyView; Stratos 0.4.0 "Mirror").
+        com.solarbiscuit.atmosphera.lib.world.SkyView.requireInTerrain(shading);
         net.minecraftforge.common.MinecraftForge.EVENT_BUS.addListener(
                 (net.minecraftforge.event.TickEvent.RenderTickEvent e) -> {
                     if (e.phase == net.minecraftforge.event.TickEvent.Phase.START) {

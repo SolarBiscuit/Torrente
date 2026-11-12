@@ -277,7 +277,12 @@ final class WaterGlsl {
 
                 // Fresnel (Schlick, F0 0.02) sky reflection; covered water reflects much less sky.
                 vec3 torrenteR = reflect(torrenteV, torrenteN);
+                // 0.2.5: the drawn sky and clouds (lib SkyView, from a sky mod such as Stratos), else the fog-to-sky blend.
+                #ifdef ATMOS_SKY_VIEW
+                vec3 torrenteSkyCol = atmos_skyView(torrenteR);
+                #else
                 vec3 torrenteSkyCol = mix(atmos_FogColor.rgb, atmos_SkyColor.rgb, smoothstep(0.0, 0.35, torrenteR.y));
+                #endif
                 torrenteSkyCol *= mix(0.12, 1.0, smoothstep(0.5, 0.95, torrenteSky));
                 float torrenteF = (0.02 + 0.98 * pow(1.0 - torrenteCos, 5.0)) * torrente_Surface.x;
                 torrenteRgb = mix(torrenteRgb, torrenteSkyCol, torrenteF);
