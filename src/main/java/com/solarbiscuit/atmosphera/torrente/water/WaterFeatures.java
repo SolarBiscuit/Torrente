@@ -45,6 +45,8 @@ public final class WaterFeatures {
     private static AtmosFeature waves;
     private static WaterStyle frameStyle = WaterStyle.FALLBACK;
     private static final WindVector WIND = new WindVector();
+    private static final com.solarbiscuit.atmosphera.lib.world.Weather.Sample WEATHER =
+            new com.solarbiscuit.atmosphera.lib.world.Weather.Sample();
 
     private WaterFeatures() {
     }
@@ -58,40 +60,51 @@ public final class WaterFeatures {
                 .provides(Capability.WATER_SHADING)
                 .uses(AtmosFeature.Uses.TERRAIN_SHADER, AtmosFeature.Uses.MESH_BITS, AtmosFeature.Uses.SCENE_DEPTH)
                 .switchedBy(TorrenteConfig.shading)
+                .enabledWhen(() -> TorrenteConfig.shading.enabled().get() && notVanilla())
                 .register();
         // Compiled into the shading snippet (its macro gates the refraction branch); it adds the colour copy.
         AtmosFeature refraction = AtmosFeature.builder(Torrente.MOD_ID, "refraction")
                 .provides(Capability.WATER_SHADING)
                 .uses(AtmosFeature.Uses.TERRAIN_SHADER, AtmosFeature.Uses.SCENE_DEPTH, AtmosFeature.Uses.SCENE_COLOR)
                 .switchedBy(TorrenteConfig.shading)
-                .enabledWhen(() -> TorrenteConfig.shading.enabled().get() && TorrenteConfig.refraction.get())
+                .enabledWhen(() -> TorrenteConfig.shading.enabled().get() && TorrenteConfig.refraction.get() && notVanilla())
                 .register();
         waves = AtmosFeature.builder(Torrente.MOD_ID, "waves")
                 .provides(Capability.WATER_WAVES)
                 .uses(AtmosFeature.Uses.TERRAIN_SHADER, AtmosFeature.Uses.MESH_BITS)
                 .switchedBy(TorrenteConfig.waves)
+                .enabledWhen(() -> TorrenteConfig.waves.enabled().get() && notVanilla())
                 .register();
         AtmosFeature caustics = AtmosFeature.builder(Torrente.MOD_ID, "caustics")
                 .provides(Capability.CAUSTICS)
                 .uses(AtmosFeature.Uses.TERRAIN_SHADER, AtmosFeature.Uses.MESH_BITS, AtmosFeature.Uses.FACE_NORMAL)
                 .switchedBy(TorrenteConfig.caustics)
+                .enabledWhen(() -> TorrenteConfig.caustics.enabled().get() && notVanilla())
                 .register();
         causticsFeature = caustics;
         // 0.2.1: exact water depth from the lib's column field (lib 0.5.0); kept running while caustics are active.
         com.solarbiscuit.atmosphera.lib.world.ColumnFieldShader.requireInTerrain(caustics);
-        // 0.2.5: the drawn sky and clouds in the reflection (lib 0.8.0 SkyView; Stratos 0.4.0 "Mirror").
+        // 0.2.5: the drawn sky and clouds in the reflection (lib 0.8.0 SkyView; Atmosphera 0.4.0 "Mirror").
         com.solarbiscuit.atmosphera.lib.world.SkyView.requireInTerrain(shading);
         net.minecraftforge.common.MinecraftForge.EVENT_BUS.addListener(
                 (net.minecraftforge.event.TickEvent.RenderTickEvent e) -> {
                     if (e.phase == net.minecraftforge.event.TickEvent.Phase.START) {
                         keepColumnField();
+                        // 0.5.2: the reflection and ripple targets are freed while their feature is off.
+                        Mirror.update();
+                        Ripples.update();
                     }
                 });
         UnderwaterFog.feature = AtmosFeature.builder(Torrente.MOD_ID, "underwater_fog")
                 .provides(Capability.UNDERWATER_FOG)
-                .uses(AtmosFeature.Uses.OTHER)
+                .uses(AtmosFeature.Uses.OTHER, AtmosFeature.Uses.WORLD_PASS)
                 .switchedBy(TorrenteConfig.underwaterFog)
+                .enabledWhen(() -> TorrenteConfig.underwaterFog.enabled().get() && notVanilla())
                 .register();
+        // 0.3.0 "Mirror": planar reflections; 0.4.0 "Contact": ripples from movement and the waterline.
+        Mirror.register(shading);
+        Ripples.register();
+        Waterline.register(UnderwaterFog.feature);
 
         FluidMeshHook waterSurface = surfaceHook();
         MeshHooks.registerFluid(shading, waterSurface);
@@ -104,7 +117,7 @@ public final class WaterFeatures {
             ShaderSnippets.register(feature, ShaderHook.FRAG_DECL, ShaderSnippets.PASS_ALL, 10, WaterGlsl.FRAG_DECL);
         }
         ShaderSnippets.register(shading, ShaderHook.FRAG_PRE_FOG, ShaderSnippets.PASS_TRANSLUCENT, 10,
-                WaterGlsl.surface(surface.glslMacro(), refraction.macro()));
+                WaterGlsl.surface(surface.glslMacro(), refraction.macro(), Mirror.macro(), Ripples.macro()));
         ShaderSnippets.register(waves, ShaderHook.VERT_POSITION, ShaderSnippets.PASS_TRANSLUCENT, 10,
                 WaterGlsl.waves(surface.glslMacro()));
         ShaderSnippets.register(caustics, ShaderHook.FRAG_PRE_FOG, ShaderSnippets.PASS_SOLID | ShaderSnippets.PASS_CUTOUT, 10,
@@ -169,6 +182,11 @@ public final class WaterFeatures {
         return !fluid.isEmpty() && fluid.is(FluidTags.WATER);
     }
 
+    /** False for the VANILLA style (0.5.0): vanilla water outright, every Torrente water feature off. */
+    public static boolean notVanilla() {
+        return TorrenteConfig.style.get() != TorrenteConfig.Style.VANILLA;
+    }
+
     private static void registerSlots() {
         // Written in this order every frame; the first one picks the frame's style.
         FrameUniforms.vec4("torrente_Color", "rgb: water colour, a: shallow opacity", out -> {
@@ -202,11 +220,26 @@ public final class WaterFeatures {
             out[2] = s.causticFade();
             out[3] = TorrenteConfig.quality.get() == TorrenteConfig.Quality.HIGH ? 2f : 1f;
         });
+        // 0.5.0 (Lagoon): a shallow-water colour and the caustics' tint and edge sharpness.
+        FrameUniforms.vec4("torrente_Shallow", "rgb: shallow-water colour, a: how much shallow water takes it", out -> {
+            WaterStyle s = frameStyle;
+            out[0] = s.shallowColor()[0];
+            out[1] = s.shallowColor()[1];
+            out[2] = s.shallowColor()[2];
+            out[3] = s.shallowMix();
+        });
+        FrameUniforms.vec4("torrente_CausticTint", "rgb: caustic tint (white: none), a: edge sharpness (1: as before 0.5.0)", out -> {
+            WaterStyle s = frameStyle;
+            out[0] = s.causticTint()[0];
+            out[1] = s.causticTint()[1];
+            out[2] = s.causticTint()[2];
+            out[3] = s.causticSharpness();
+        });
         FrameUniforms.vec4("torrente_Mode", "x: depth mode (0 off, 1 Torrente, 2 Bathymetry)",
                 out -> out[0] = Styles.depthMode());
         FrameUniforms.vec4("torrente_Swell", "xyz: amplitude weights of the three swell directions (downwind ones higher, sum of 0.5/0.3/0.2 kept)",
                 WaterFeatures::writeSwell);
-        FrameUniforms.vec4("torrente_Light", "x: crest glow, y: rain ring strength (0 when dry), z: caustic dispersion (HIGH)",
+        FrameUniforms.vec4("torrente_Light", "x: crest glow, y: rain ring strength (0 when dry), z: caustic dispersion (HIGH), w: sky colour blend (0.5.0)",
                 WaterFeatures::writeLight);
         FrameUniforms.vec4("torrente_Lod", "x: shade Voxy LOD water (lod_water option), y: debug channel",
                 out -> {
@@ -268,10 +301,14 @@ public final class WaterFeatures {
             float rain = level.getRainLevel(Minecraft.getInstance().getFrameTime());
             if (rain > 0.01f && rainsOnNearbyWater(level,
                     Minecraft.getInstance().gameRenderer.getMainCamera().getBlockPosition())) {
-                out[1] = rain;
+                // 0.4.1: rings come faster in heavy rain and sparser in drizzle (the library's Weather service; 0.8
+                // is ordinary rain, so without a weather mod nothing changes).
+                com.solarbiscuit.atmosphera.lib.world.Weather.current(level, Minecraft.getInstance().getFrameTime(), WEATHER);
+                out[1] = rain * Math.max(0.4f, Math.min(1.4f, WEATHER.modelled ? WEATHER.intensity / Math.max(rain, 0.05f) / 0.8f : 1f));
             }
         }
         out[2] = TorrenteConfig.causticDispersion.get() && TorrenteConfig.quality.get() == TorrenteConfig.Quality.HIGH ? 1f : 0f;
+        out[3] = frameStyle == null ? 0f : frameStyle.skyBlend();
     }
 
     /** Columns tested for rain: the camera's and four 16 blocks away (rings are drawn within 40 blocks). */
@@ -314,9 +351,7 @@ public final class WaterFeatures {
     }
 
     private static boolean rainsAt(ClientLevel level, int x, int y, int z) {
-        RAIN_POS.set(x, y, z);
-        return level.getBiome(RAIN_POS).value().getPrecipitationAt(RAIN_POS)
-                == net.minecraft.world.level.biome.Biome.Precipitation.RAIN;
+        return com.solarbiscuit.atmosphera.lib.world.Weather.rainsAt(level, RAIN_POS.set(x, y, z));
     }
 
     private static void writeWaves(float[] out) {

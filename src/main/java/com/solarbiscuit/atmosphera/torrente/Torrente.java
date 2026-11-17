@@ -29,9 +29,34 @@ public final class Torrente {
             return;
         }
         IEventBus modBus = FMLJavaModLoadingContext.get().getModEventBus();
+        convertStyleNames();
         TorrenteConfig.register();
         WaterFeatures.register();
         UnderwaterFog.register(MinecraftForge.EVENT_BUS);
+        // 0.3.0: /atmosphera reload shaders (and the reload key) rebuilds the reflection, ripple and waterline passes.
+        com.solarbiscuit.atmosphera.lib.options.AtmosReload.register(MOD_ID, () -> {
+            com.solarbiscuit.atmosphera.torrente.water.Mirror.release();
+            com.solarbiscuit.atmosphera.torrente.water.Ripples.release();
+            com.solarbiscuit.atmosphera.torrente.water.Waterline.release();
+        });
         modBus.addListener((RegisterClientReloadListenersEvent e) -> e.registerReloadListener(new StyleLoader()));
+    }
+
+    /**
+     * 0.5.0 renamed the water styles. A file written before 0.5.0 (no {@code style_names} key) has its style converted
+     * once, all names at the same time, before Forge reads it: VANILLA_PLUS to VANILLA, REIMAGINED to VANILLA_PLUS,
+     * AURORA to CELESTIAL, UNBOUND to ATMOSPHERA and GLIMMER to LAGOON. Forge then adds {@code style_names = 2}.
+     */
+    private static void convertStyleNames() {
+        java.util.Map<String, String> names = java.util.Map.of("VANILLA_PLUS", "VANILLA", "REIMAGINED", "VANILLA_PLUS",
+                "AURORA", "CELESTIAL", "UNBOUND", "ATMOSPHERA", "GLIMMER", "LAGOON");
+        // 0.5.1: AtmospheraLib's one-time rewrite (0.11.0).
+        com.solarbiscuit.atmosphera.lib.options.ConfigMigration.Change change =
+                com.solarbiscuit.atmosphera.lib.options.ConfigMigration.rewrite("torrente-client.toml", "style_names", null,
+                        java.util.regex.Pattern.compile("(?m)^(\\s*style\\s*=\\s*\")([A-Za-z_]+)(\")"),
+                        old -> names.get(old.toUpperCase(java.util.Locale.ROOT)), LOGGER, "water style");
+        if (change != null) {
+            LOGGER.info("Torrente 0.5.0 renamed the water styles: your style {} is now {}.", change.before(), change.after());
+        }
     }
 }

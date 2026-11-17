@@ -1,5 +1,7 @@
 package com.solarbiscuit.atmosphera.torrente.water;
 
+import static com.solarbiscuit.atmosphera.lib.util.AtmosMath.luminance;
+
 import com.solarbiscuit.atmosphera.lib.client.AtmosClient;
 import com.solarbiscuit.atmosphera.lib.feature.AtmosFeature;
 import com.solarbiscuit.atmosphera.torrente.TorrenteConfig;
@@ -7,7 +9,6 @@ import com.solarbiscuit.atmosphera.torrente.style.Styles;
 import com.solarbiscuit.atmosphera.torrente.style.WaterStyle;
 import net.minecraft.client.Camera;
 import net.minecraft.client.multiplayer.ClientLevel;
-import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.material.FogType;
 import net.minecraftforge.client.event.ViewportEvent;
 import net.minecraftforge.eventbus.api.IEventBus;
@@ -53,7 +54,8 @@ public final class UnderwaterFog {
         if (style.fogMix() <= 0f) {
             return;
         }
-        int base = level.getBiome(BlockPos.containing(camera.getPosition())).value().getWaterFogColor();
+        // 0.5.2: the camera's own block position (it allocated a BlockPos every frame under water).
+        int base = level.getBiome(camera.getBlockPosition()).value().getWaterFogColor();
         float baseLum = luminance(((base >> 16) & 255) / 255f, ((base >> 8) & 255) / 255f, (base & 255) / 255f);
         float r = event.getRed();
         float g = event.getGreen();
@@ -64,9 +66,5 @@ public final class UnderwaterFog {
         event.setRed(r + (target[0] * brightness - r) * mix);
         event.setGreen(g + (target[1] * brightness - g) * mix);
         event.setBlue(b + (target[2] * brightness - b) * mix);
-    }
-
-    private static float luminance(float r, float g, float b) {
-        return 0.299f * r + 0.587f * g + 0.114f * b;
     }
 }

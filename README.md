@@ -14,7 +14,7 @@ This is the feature set Torrente will have when its [roadmap](#roadmap) is compl
 
 ### Colour and depth
 
-- **Water styles.** Unbound, Glimmer, Reimagined, Vanilla+ and a fully editable Custom style. Styles are JSON files, so a resource pack can replace or add them.
+- **Water styles.** Atmosphera (the default), Lagoon, Celestial, Vanilla Plus, Vanilla and a fully editable Custom style. Lagoon is very clear water with bright blues, turquoise shallows, sharp caustics and a colour that follows the sky and fog. Celestial is after Aurora Fantasy. Vanilla Plus keeps the vanilla texture and adds light effects. Vanilla is vanilla water with Torrente's effects off. Styles are JSON files, so a resource pack can replace or add them.
 - **Depth absorption.** Per-channel Beer-Lambert absorption over the real view thickness, from the scene depth. Shallow water is clear and deep water takes its colour.
 - **Underwater fog** in the style's colour, with the visibility set by the style.
 - **Exact depth for every effect.** Depth comes from the world's own water column instead of a skylight guess, so lit caves and the water under overhangs behave correctly.
@@ -73,7 +73,7 @@ The figures below are the project's own measurements, taken with the in-repo sce
 | Release | Theme | Content |
 |---|---|---|
 | 0.1.x | Foundation | Styles, absorption, Fresnel and glints, refraction, foam, swell and ripples, caustics, underwater fog; whole-cycle animation and cheaper ripples |
-| 0.2.x | Light (**current: 0.2.5**) | Wind-aligned waves, sun-projected caustics, crest glow, rain rings, caustic dispersion, exact caustic depth from the column field; 0.2.5: the water reflects Stratos's sky and clouds |
+| 0.2.x | Light (**current: 0.2.5**) | Wind-aligned waves, sun-projected caustics, crest glow, rain rings, caustic dispersion, exact caustic depth from the column field; 0.2.5: the water reflects Atmosphera's sky and clouds |
 | 0.3.0 | Mirror | Planar reflections (compute, one plane, sky fallback) |
 | 0.4.0 | Contact | Interactive ripples, underwater shafts with Lumis, entities under water, waterline; research: glass behind water, turbid refraction |
 
@@ -83,15 +83,15 @@ Dates are not promised. Each feature release is a minor version (0.X.0). Version
 
 - Minecraft **1.20.1** with Forge **47.x**
 - Java **17** or newer
-- [AtmospheraLib](https://github.com/SolarBiscuit/AtmospheraLib) **0.8.0** or newer
+- [AtmospheraLib](https://github.com/SolarBiscuit/AtmospheraLib) **0.11.0** or newer (current builds: Torrente 0.5.2, AtmospheraLib 0.11.3)
 - An Embeddium-based terrain renderer (developed and tested with Xenon 0.3.31)
-- Optional: Gale for wind-aligned waves, Lumis for underwater shafts, NeoVoxy for LOD water
+- Optional: Gale for wind-aligned waves, Lumis (its underwater shafts take Torrente's water colour), Atmosphera (its sky and clouds in the reflections), Stratos (rain rings follow its rain intensity), NeoVoxy for LOD water
 
 ## Installation
 
 1. Install AtmospheraLib and an Embeddium-based terrain renderer.
 2. Place `torrente-<version>-mc1.20.1-forge.jar` in `mods`.
-3. Options are in the Atmosphera tab of Video Settings, and in `config/Atmosphera/` (before AtmospheraLib 0.6.7: `config/SolConfig/atmosphera/`, moved across automatically).
+3. Options are in the Atmosphera tab of Video Settings, and in `config/Atmosphera/` (before AtmospheraLib 0.6.7: `config/SolConfig/atmosphera/`, moved across automatically). Settings are grouped in dropdowns (closed by default, and remembered). Without Xenon or Embeddium, the library's own settings screen (the "Atmosphera..." button in Video Settings, or Config in the Mods list) shows the same groups.
 
 ## Building
 
@@ -105,7 +105,7 @@ Torrente builds from the Atmosphera Gradle multi-project: the four repositories 
 
 - Torrente is licensed under the **GNU General Public License v3.0 only** ([`LICENSE`](LICENSE)). Copyright (C) 2026 SolarBiscuit.
 - Additional terms under GPL-3.0 section 7 are in [`NOTICE`](NOTICE). Every copy or substantial portion that you distribute, original or modified, must keep that notice and credit "SolarBiscuit" with a link to <https://github.com/SolarBiscuit/Torrente>. A modified version must be clearly marked as modified, and must not be presented as the original work or under its name and author without that marking.
-- **Third-party material.** Parts of the water shaders and styles are adapted from MIT-licensed work: the absorption and scattering coefficients of Glimmer Shaders v1.5.2 (Copyright (c) 2024 Josh Britain) and the wave-normal octave scheme of "Very fast procedural ocean" by afl_ext (2017). Their copyright and permission notices are kept in [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md). MIT is compatible with GPL-3.0, so the combined work remains GPL-3.0-only, and the MIT notices stay with the material they cover. No Complementary Shaders code is used.
+- **Third-party material.** Parts of the water shaders and styles are adapted from MIT-licensed work: the wave-normal octave scheme of "Very fast procedural ocean" by afl_ext (2017). Its copyright and permission notice is kept in [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md). MIT is compatible with GPL-3.0, so the combined work remains GPL-3.0-only, and the MIT notices stay with the material they cover. The Celestial style takes numeric water values (no code, no textures) from Aurora Fantasy 5.6 by in2bubble, whose notice is in the same file. No Complementary Shaders code is used.
 - The Torrente jar bundles no third-party libraries. It is built against Minecraft, Forge and AtmospheraLib, which are not redistributed with it.
 - Torrente is an independent project. It is not affiliated with, endorsed by, or supported by Mojang Studios, Microsoft, Minecraft Forge, or the authors of Glimmer Shaders or any other shaderpack.
 

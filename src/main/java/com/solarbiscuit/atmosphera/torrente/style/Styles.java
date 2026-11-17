@@ -39,6 +39,9 @@ public final class Styles {
             }
             return custom;
         }
+        if (selected == TorrenteConfig.Style.VANILLA) {
+            return WaterStyle.NEUTRAL;
+        }
         return presets.getOrDefault(selected, WaterStyle.FALLBACK);
     }
 

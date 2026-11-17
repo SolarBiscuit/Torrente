@@ -1,0 +1,28 @@
+{
+  "_comment": "Torrente water style 'Lagoon' (0.5.0): very clear water with bright blues, turquoise shallows, sharp and lively caustics, and a colour that follows the sky and fog around it (warm at sunset, grey under overcast, deep blue at night). Original values. Override by shipping assets/torrente/styles/lagoon.json in a resource pack; colours are #RRGGBB.",
+  "water_color": "#2A9AE3",
+  "biome_tint": 0.4,
+  "opacity": 0.12,
+  "absorption": [
+    0.1,
+    0.035,
+    0.025
+  ],
+  "reflection": 1.0,
+  "specular": 1.15,
+  "wave_normals": 0.6,
+  "texture": 0.05,
+  "refraction": 1.3,
+  "foam": 0.4,
+  "caustics": 1.4,
+  "caustic_scale": 0.85,
+  "caustic_fade": 14,
+  "fog_color": "#1E84C8",
+  "fog_mix": 0.8,
+  "fog_distance": 1.8,
+  "shallow_color": "#3ADCCB",
+  "shallow_mix": 0.55,
+  "sky_blend": 0.45,
+  "caustic_sharpness": 1.6,
+  "caustic_tint": "#E2FAFF"
+}
