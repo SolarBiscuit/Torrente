@@ -83,7 +83,7 @@ Dates are not promised. Each feature release is a minor version (0.X.0). Version
 
 - Minecraft **1.20.1** with Forge **47.x**
 - Java **17** or newer
-- [AtmospheraLib](https://github.com/SolarBiscuit/AtmospheraLib) **0.11.0** or newer (current builds: Torrente 0.5.2, AtmospheraLib 0.11.3)
+- [AtmospheraLib](https://github.com/SolarBiscuit/AtmospheraLib) **0.11.0** or newer (current builds: Torrente 0.5.2, AtmospheraLib 0.11.5)
 - An Embeddium-based terrain renderer (developed and tested with Xenon 0.3.31)
 - Optional: Gale for wind-aligned waves, Lumis (its underwater shafts take Torrente's water colour), Atmosphera (its sky and clouds in the reflections), Stratos (rain rings follow its rain intensity), NeoVoxy for LOD water
 

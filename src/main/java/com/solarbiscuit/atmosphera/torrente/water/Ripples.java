@@ -1,6 +1,7 @@
 package com.solarbiscuit.atmosphera.torrente.water;
 
 import com.solarbiscuit.atmosphera.lib.client.AtmosClient;
+import com.solarbiscuit.atmosphera.lib.client.DevFlags;
 import com.solarbiscuit.atmosphera.lib.feature.AtmosFeature;
 import com.solarbiscuit.atmosphera.lib.gpu.PostProgram;
 import com.solarbiscuit.atmosphera.lib.gpu.Textures;
@@ -21,8 +22,12 @@ import com.solarbiscuit.atmosphera.torrente.TorrenteConfig;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.tags.FluidTags;
+import net.minecraft.util.Mth;
+import net.minecraft.util.RandomSource;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.level.material.FluidState;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
@@ -45,7 +50,8 @@ import java.nio.ByteBuffer;
  * to its normal with one fetch. When the camera crosses a cell the grid scrolls (the update reads the old state
  * shifted), so rings stay where they were made. Impulses ("splats") come from the client tick: up to 16 entities within
  * 16 blocks whose box crosses the water surface and that move, by their horizontal speed, or a bigger one where
- * something falls in. Not on Voxy LOD water.
+ * something falls in or rises out (0.5.3: the nearest first, and a breach also throws spray). Rings show from above
+ * and from under the water (0.5.3). Not on Voxy LOD water.
  */
 public final class Ripples {
     static final int SIZE = 128;
@@ -123,20 +129,26 @@ public final class Ripples {
             return;
         }
         Vec3 camera = mc.gameRenderer.getMainCamera().getPosition();
+        Entity cameraEntity = mc.getCameraEntity();
         // 0.4.2: added to what the last step has not used yet (a tick without a step lost its splashes).
-        int n = splats;
+        // 0.5.3: the free slots go to the nearest entities (the camera's own first), not the first ones listed.
+        int room = MAX_SPLATS - splats;
+        int candidates = 0;
+        int farthest = -1;
+        boolean breachParticles = TorrenteConfig.rippleBreachParticles.get();
         for (Entity entity : level.entitiesForRendering()) {
-            if (n >= MAX_SPLATS) {
+            if (room <= 0) {
                 break;
             }
             double dx = entity.getX() - camera.x;
             double dz = entity.getZ() - camera.z;
-            if (dx * dx + dz * dz > 16.0 * 16.0 || entity.isSpectator()) {
+            double d2 = dx * dx + dz * dz;
+            if (d2 > 16.0 * 16.0 || entity.isSpectator()) {
                 continue;
             }
-            float surface = WaterColumn.surfaceNear(level, net.minecraft.util.Mth.floor(entity.getX()),
-                    net.minecraft.util.Mth.floor(entity.getY() + 0.2), net.minecraft.util.Mth.floor(entity.getZ()), POS);
-            if (Float.isNaN(surface)) {
+            if (entity == cameraEntity) {
+                d2 = -1.0;
+            } else if (candidates == room && d2 >= CAND_D2[farthest]) {
                 continue;
             }
             AABB box = entity.getBoundingBox();
@@ -146,24 +158,78 @@ public final class Ripples {
             // 0.4.2: crossing the surface since the last tick counts too (a falling item passes it within one tick).
             double lowest = Math.min(box.minY, box.minY - vy);
             double highest = Math.max(box.maxY, box.maxY - vy);
-            if (lowest > surface + 0.05 || highest < surface - 0.05) {
+            // 0.5.3: the surface anywhere along the box's swept height. Feet more than a block under it (an elder
+            // guardian, a drowned, a player upright in deep water) found only water above and were skipped.
+            float surface = WaterColumn.surfaceAcross(level, Mth.floor(entity.getX()), Mth.floor(lowest),
+                    Mth.floor(highest), Mth.floor(entity.getZ()), POS);
+            if (Float.isNaN(surface) || lowest > surface + 0.05 || highest < surface - 0.05) {
                 continue;
             }
             double speed = Math.sqrt(vx * vx + vz * vz);
             float strength = (float) Math.min(speed / 0.3, 1.0) * 0.35f;
+            int kind = KIND_MOVE;
+            float radius = (float) Math.max(0.3, Math.min(1.5, box.getXsize() * 0.6));
             if (vy < -0.15) {
                 // Falling in: a bigger ring.
-                strength = Math.max(strength, (float) Math.min(-vy / 0.6, 1.0) * 0.8f);
+                float fall = (float) Math.min(-vy / 0.6, 1.0) * 0.8f;
+                if (fall > strength) {
+                    strength = fall;
+                    kind = KIND_FALL;
+                }
+            } else if (vy > 0.12) {
+                // 0.5.3: rising through the surface (a fish or a dolphin coming up, a player jumping out).
+                float rise = (float) Math.min(vy / 0.5, 1.0) * 0.6f;
+                if (rise > strength) {
+                    strength = rise;
+                    kind = KIND_RISE;
+                }
+                if (box.minY - vy < surface && box.minY > surface) {
+                    // Breach: the whole box left the water this tick. A wider ring and a burst of spray.
+                    kind = KIND_BREACH;
+                    radius = Math.min(2.0f, radius * 1.3f);
+                    if (breachParticles) {
+                        breachSplash(level, entity, box, surface);
+                    }
+                }
             }
             if (strength < 0.03f) {
                 continue;
             }
-            SPLAT[n * 4] = (float) entity.getX();
-            SPLAT[n * 4 + 1] = (float) entity.getZ();
-            SPLAT[n * 4 + 2] = (float) Math.max(0.3, Math.min(1.5, box.getXsize() * 0.6));
-            SPLAT[n * 4 + 3] = strength;
-            n++;
+            int slot;
+            if (candidates < room) {
+                slot = candidates++;
+            } else {
+                slot = farthest;
+            }
+            CAND[slot * 4] = (float) entity.getX();
+            CAND[slot * 4 + 1] = (float) entity.getZ();
+            CAND[slot * 4 + 2] = radius;
+            CAND[slot * 4 + 3] = strength;
+            CAND_D2[slot] = d2;
+            CAND_KIND[slot] = kind;
+            CAND_ENTITY[slot] = entity;
+            if (candidates == room) {
+                farthest = 0;
+                for (int i = 1; i < candidates; i++) {
+                    if (CAND_D2[i] > CAND_D2[farthest]) {
+                        farthest = i;
+                    }
+                }
+            }
         }
+        int n = splats;
+        System.arraycopy(CAND, 0, SPLAT, n * 4, candidates * 4);
+        if (DevFlags.RIPPLE_LOG) {
+            for (int i = 0; i < candidates; i++) {
+                LOG_COUNTS.computeIfAbsent(CAND_ENTITY[i].getType(), t -> new int[KINDS])[CAND_KIND[i]]++;
+            }
+            if (++logTicks >= 20) {
+                logTicks = 0;
+                logCounts();
+            }
+        }
+        java.util.Arrays.fill(CAND_ENTITY, 0, candidates, null);
+        n += candidates;
         if (n > splats && !loggedSplash) {
             loggedSplash = true;
             Torrente.LOGGER.info("Ripples: first splash at {} {} (strength {})", SPLAT[splats * 4], SPLAT[splats * 4 + 1],
@@ -172,7 +238,45 @@ public final class Ripples {
         splats = n;
     }
 
+    /** 0.5.3: spray where something breaks out of the water (vanilla's splash only plays where things fall in). */
+    private static void breachSplash(ClientLevel level, Entity entity, AABB box, float surface) {
+        RandomSource random = level.random;
+        double width = box.getXsize();
+        int count = Math.min(12, 4 + (int) (width * 6.0));
+        for (int i = 0; i < count; i++) {
+            double ox = (random.nextDouble() * 2.0 - 1.0) * width * 0.7;
+            double oz = (random.nextDouble() * 2.0 - 1.0) * width * 0.7;
+            level.addParticle(ParticleTypes.SPLASH, entity.getX() + ox, surface + 0.05, entity.getZ() + oz,
+                    ox * 0.1, 0.1 + random.nextDouble() * 0.15, oz * 0.1);
+        }
+    }
+
+    private static void logCounts() {
+        if (LOG_COUNTS.isEmpty()) {
+            return;
+        }
+        StringBuilder line = new StringBuilder("Ripples: last 1 s:");
+        LOG_COUNTS.forEach((type, counts) -> line.append(' ').append(EntityType.getKey(type).getPath())
+                .append(" move=").append(counts[KIND_MOVE]).append(" fall=").append(counts[KIND_FALL])
+                .append(" rise=").append(counts[KIND_RISE]).append(" breach=").append(counts[KIND_BREACH]).append(';'));
+        Torrente.LOGGER.info(line.toString());
+        LOG_COUNTS.clear();
+    }
+
     private static boolean loggedSplash;
+    private static final int KIND_MOVE = 0;
+    private static final int KIND_FALL = 1;
+    private static final int KIND_RISE = 2;
+    private static final int KIND_BREACH = 3;
+    private static final int KINDS = 4;
+    // 0.5.3: this tick's nearest candidates (fixed arrays, nothing allocated per tick).
+    private static final float[] CAND = new float[MAX_SPLATS * 4];
+    private static final double[] CAND_D2 = new double[MAX_SPLATS];
+    private static final int[] CAND_KIND = new int[MAX_SPLATS];
+    private static final Entity[] CAND_ENTITY = new Entity[MAX_SPLATS];
+    // Dev flag ripple_log only.
+    private static final java.util.Map<EntityType<?>, int[]> LOG_COUNTS = new java.util.LinkedHashMap<>();
+    private static int logTicks;
 
     /**
      * 0.5.2: render tick. Frees the grid while ripples are off or no world is shown; it was kept until a shader reload.

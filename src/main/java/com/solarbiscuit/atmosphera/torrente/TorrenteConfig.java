@@ -37,6 +37,7 @@ public final class TorrenteConfig {
     public static AtmosOption<Boolean> rainRipples;
     public static AtmosOption<Boolean> mirror;
     public static AtmosOption<Boolean> ripples;
+    public static AtmosOption<Boolean> rippleBreachParticles;
     public static AtmosOption<Boolean> waterline;
     public static AtmosOption<Boolean> causticDispersion;
     public static AtmosConfig.FeatureSwitch caustics;
@@ -114,6 +115,9 @@ public final class TorrenteConfig {
                         + "Half resolution on MEDIUM quality, full on HIGH, off on LOW. Elsewhere water reflects the sky.");
         ripples = config.toggle("ripples", true, ChangeTier.LIVE, "Ripples from movement",
                 "Players, mobs, boats and items moving through the water send rings across it (within 16 blocks).");
+        rippleBreachParticles = config.toggle("ripple_breach_spray", true, ChangeTier.LIVE, "Spray from breaching",
+                "Fish, dolphins and players leaping out of the water throw a little spray where they break the surface. "
+                        + "Needs ripples from movement on.");
         config.groupAtEnd("debug", "Debug");
         debugChannel = config.choice("debug_channel", DebugChannel.OFF, ChangeTier.LIVE, "Debug: show input",
                 "Diagnostics: paints one input of the water shading instead of the water, on near and Voxy LOD water "

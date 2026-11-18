@@ -478,7 +478,8 @@ final class WaterGlsl {
                     #endif
                     #ifdef %4$s
                         // 0.4.0: rings from things moving through the water (a 32x32-block grid round the camera).
-                        if (torrente_Ripple.z > 0.0 && torrenteGeo.y > 0.5) {
+                        // 0.5.3: from under the surface too (the normal is turned towards the viewer there).
+                        if (torrente_Ripple.z > 0.0 && abs(torrenteGeo.y) > 0.5) {
                             vec2 torrenteRuv = (torrenteRel.xz - torrente_Ripple.xy) * (1.0 / 32.0);
                             vec2 torrenteRe = abs(torrenteRuv - 0.5) * 2.0;
                             float torrenteRf = 1.0 - smoothstep(0.8, 1.0, max(torrenteRe.x, torrenteRe.y));
